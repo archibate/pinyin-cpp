@@ -1,6 +1,6 @@
 namespace pinyincpp {
 extern const unsigned long long chars_csv_size = 183255;
-extern const unsigned char chars_csv[] = {
+extern const char chars_csv[] = {
 51,48,51,52,48,44,56,51,48,50,54,57,56,44,100,101,
 47,100,105,50,47,100,105,52,10,49,57,57,54,56,44,51,
 55,50,56,51,57,56,44,121,105,49,10,49,57,57,56,49,

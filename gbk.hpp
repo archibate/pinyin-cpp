@@ -77,6 +77,14 @@ inline std::string unicodeToGbk(std::basic_string_view<Wide> str) {
     return result;
 }
 
+inline std::string gbkToUtfC(std::string_view str) {
+    return utf32toC(gbkToUnicode<char32_t>(str));
+}
+
+inline std::wstring gbkToUtfW(std::string_view str) {
+    return utf32toW(gbkToUnicode<char32_t>(str));
+}
+
 inline std::u8string gbkToUtf8(std::string_view str) {
     return utf32to8(gbkToUnicode<char32_t>(str));
 }
@@ -87,6 +95,14 @@ inline std::u16string gbkToUtf16(std::string_view str) {
 
 inline std::u32string gbkToUtf32(std::string_view str) {
     return gbkToUnicode<char32_t>(str);
+}
+
+inline std::string utfCToGbk(std::string_view str) {
+    return unicodeToGbk<char32_t>(utfCto32(str));
+}
+
+inline std::string utfWToGbk(std::wstring_view str) {
+    return unicodeToGbk<char32_t>(utfWto32(str));
 }
 
 inline std::string utf8ToGbk(std::u8string_view str) {

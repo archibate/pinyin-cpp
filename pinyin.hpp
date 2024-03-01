@@ -309,14 +309,14 @@ struct PinyinDB {
     std::vector<Id> simpleAliasedMatchPinyin(
         std::vector<std::pair<Id, std::vector<std::string>>> const &candidates, std::string const &query,
         std::size_t limit = (std::size_t)-1) {
-        auto qPids = pinyinSplit(utf8to32(query));
+        auto qPids = pinyinSplit(utfCto32(query));
         std::vector<std::vector<PidSet>> cPidSets;
         std::vector<std::size_t> aliasTargets;
         cPidSets.reserve(candidates.size());
         aliasTargets.reserve(candidates.size());
         for (std::size_t i = 0; i < candidates.size(); ++i) {
             for (auto &c : candidates[i].second) {
-                cPidSets.emplace_back(stringToPinyin(utf8to32(c)));
+                cPidSets.emplace_back(stringToPinyin(utfCto32(c)));
                 aliasTargets.emplace_back(i);
             }
         }
@@ -356,10 +356,10 @@ struct PinyinDB {
     std::vector<HighlightMatchResult> simpleHighlightMatchPinyin(
         std::vector<std::string> const &candidates, std::string const &query, std::size_t limit = (std::size_t)-1,
         std::string const &hlBegin = "<em>", std::string const &hlEnd = "</em>") {
-        auto qPids = pinyinSplit(utf8to32(query));
+        auto qPids = pinyinSplit(utfCto32(query));
         std::vector<std::u32string> candidates32;
         for (auto s : candidates) {
-            candidates32.emplace_back(utf8to32(s));
+            candidates32.emplace_back(utfCto32(s));
         }
         std::vector<std::vector<PidSet>> results;
         results.reserve(candidates.size());

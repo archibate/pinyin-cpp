@@ -1,6 +1,6 @@
 namespace pinyincpp {
 extern const unsigned long long gbk_bin_size = 47880;
-extern const unsigned char gbk_bin[] = {
+extern const char gbk_bin[] = {
 -2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,
 -2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,
 -2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,-2,-1,

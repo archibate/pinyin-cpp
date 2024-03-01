@@ -297,4 +297,76 @@ inline std::string utfWtoC(std::wstring_view s) {
     return utf8toC(utfWto8(s));
 }
 
+inline bool utf8Validate(std::u8string_view s) {
+    int state = 0;
+    for (char8_t c : s) {
+        if (state == 0) {
+            if ((c & 0x80) == 0) {
+                state = 0;
+            } else if ((c & 0xE0) == 0xC0) {
+                state = 1;
+            } else if ((c & 0xF0) == 0xE0) {
+                state = 2;
+            } else if ((c & 0xF8) == 0xF0) {
+                state = 3;
+            } else if ((c & 0xFC) == 0xF8) {
+                state = 4;
+            } else if ((c & 0xFE) == 0xFC) {
+                state = 5;
+            } else {
+                return false;
+            }
+        } else {
+            if ((c & 0xC0) == 0x80) {
+                state--;
+            } else {
+                return false;
+            }
+        }
+    }
+    return state == 0;
+}
+
+inline bool utf16Validate(std::u16string_view s) {
+    for (int i = 0; i < s.size(); i++) {
+        if (s[i] >= 0xD800 && s[i] <= 0xDBFF) {
+            if (i + 1 < s.size() && s[i + 1] >= 0xDC00 && s[i + 1] <= 0xDFFF) {
+                i++;
+            } else {
+                return false;
+            }
+        } else if (s[i] >= 0xDC00 && s[i] <= 0xDFFF) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool utf32Validate(std::u32string_view s) {
+    for (char32_t c : s) {
+        if (c < 0x110000) {
+            if (c >= 0xD800 && c <= 0xDFFF) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool utfWValidate(std::wstring_view s) {
+    if constexpr (sizeof(wchar_t) == 2) {
+        return utf16Validate(std::u16string_view((const char16_t *)s.data(), s.size()));
+    } else if constexpr (sizeof(wchar_t) == 4) {
+        return utf32Validate(std::u32string_view((const char32_t *)s.data(), s.size()));
+    } else {
+        return true;
+    }
+}
+
+inline bool utfCValidate(std::string_view s) {
+    return utf8Validate(std::u8string_view((const char8_t *)s.data(), s.size()));
+}
+
 }

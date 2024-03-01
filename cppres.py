@@ -29,7 +29,7 @@ with open(args.file, 'rb') as f:
         if args.namespace:
             fout.write('namespace {} {{\n'.format(args.namespace))
         fout.write('extern const unsigned long long {} = {};\n'.format(args.size_name, len(content)))
-        fout.write('extern const unsigned char {}[] = {{\n'.format(args.name))
+        fout.write('extern const char {}[] = {{\n'.format(args.name))
         for i in range(len(content)):
             c = content[i]
             if c >= 0x80:
