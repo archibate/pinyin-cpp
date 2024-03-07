@@ -18,10 +18,18 @@ struct PinyinDB {
     using Pid = std::int32_t;
     using PidSet = std::vector<Pid>;
 
-    struct WordData {
+    struct WordInfo {
         char32_t word;
+        double logFreq;
+    };
+
+    struct WordCandidate {
+        char32_t word;
+        double score;
+    };
+
+    struct WordData : WordInfo {
         PidSet pinyin;
-        std::uint32_t freq;
     };
     struct PinyinData {
         std::string pinyin;
@@ -31,6 +39,7 @@ struct PinyinDB {
     std::vector<PinyinData> pinyinData;
 
     explicit PinyinDB(bool withTone = false) {
+        double sumLogFreq = 0;
         std::istringstream fin(std::string(chars_csv, chars_csv_size));
         std::string line;
         while (std::getline(fin, line)) {
@@ -61,11 +70,17 @@ struct PinyinDB {
                     pinyinData.push_back({tmp});
                 }
             }
-            wordData.push_back({word, std::move(pinyin), freq});
+            auto logFreq = std::log(freq + 2);
+            wordData.push_back({word, logFreq, std::move(pinyin)});
+            sumLogFreq += logFreq;
+        }
+        auto scaleLogFreq = 1 / (1 + sumLogFreq / wordData.size() + 1);
+        for (auto &c : wordData) {
+            c.logFreq = c.logFreq * scaleLogFreq;
         }
         for (const auto &c : wordData) {
             for (auto p : c.pinyin) {
-                lookupPinyinToWord[p].push_back(c.word);
+                lookupPinyinToWord[p].push_back(static_cast<WordInfo>(c));
             }
         }
         for (const auto &c : wordData) {
@@ -80,8 +95,19 @@ struct PinyinDB {
 
     std::unordered_map<std::string, Pid> lookupPinyinToPid;
     std::unordered_set<std::string> lookupPinyinPrefixSet;
-    std::unordered_map<Pid, std::vector<char32_t>> lookupPinyinToWord;
+    std::unordered_map<Pid, std::vector<WordInfo>> lookupPinyinToWord;
     std::unordered_map<char32_t, PidSet> lookupWordToPinyin;
+    std::u32string sampleString;
+    double sampleEffectivity = 1.0;
+
+    void setSampleString(std::u32string const &sample, double effectivity = 1.0) {
+        sampleString = sample;
+        sampleEffectivity = effectivity;
+    }
+
+    void setSampleString(std::string const &sample, double effectivity = 1.0) {
+        setSampleString(utfCto32(sample), effectivity);
+    }
 
     Pid pinyinId(std::string const &pinyin) {
         auto it = lookupPinyinToPid.find(pinyin);
@@ -94,7 +120,7 @@ struct PinyinDB {
 
     std::string pinyinName(Pid pinyin) {
         if (pinyin < 0) {
-            return utf32to8((char32_t)-pinyin);
+            return utf32toC((char32_t)-pinyin);
         }
         if (pinyin >= pinyinData.size()) [[unlikely]] {
             return "";
@@ -102,7 +128,7 @@ struct PinyinDB {
         return pinyinData[pinyin].pinyin;
     }
 
-    std::vector<char32_t> pinyinToWord(Pid p) {
+    std::vector<WordInfo> pinyinToWord(Pid p) {
         auto it = lookupPinyinToWord.find(p);
         if (it == lookupPinyinToWord.end()) {
             return {};
@@ -126,21 +152,134 @@ struct PinyinDB {
         for (char32_t c : str) {
             if ('A' <= c && c <= 'Z') {
                 c += 'a' - 'A';
+            } else if (c == 0) {
+                c = ' ';
             }
             result.emplace_back(wordToPinyin(c)).push_back(-(Pid)c);
         }
         return result;
     }
 
+    static std::unordered_map<char32_t, double> wordOccurances(std::u32string const &sample, std::u32string const &prefix) {
+        std::unordered_map<char32_t, double> occurance;
+        if (sample.empty()) {
+            return occurance;
+        }
+        // find occurance in in sampleString
+        if (prefix.empty()) {
+            for (std::size_t i = 0; i < sample.size(); ++i) {
+                occurance[sample[i]] += 0.25;
+            }
+        } else {
+            auto matches = searchStringPostfix(sample, prefix);
+            if (!matches.empty()) {
+                for (auto const &[match, count] : matches) {
+                    if (count && match < sample.size()) {
+                        /* std::cout << utf32toC(prefix) << ' ' << count << ' ' << utf32toC(sample[match]) << '\n'; */
+                        occurance[sample[match]] += std::min(count * count, (std::size_t)10);
+                    }
+                }
+            }
+        }
+        for (auto &[word, logProb] : occurance) {
+            logProb = std::log(logProb + 1);
+            /* std::cout << '-' << utf32toC(word) << ' ' << logProb << '\n'; */
+        }
+        return occurance;
+    }
+
+    static std::unordered_map<std::size_t, std::size_t> searchStringPostfix(std::u32string const &sample, std::u32string const &postfix) {
+        // find postfix occurance in sample
+        std::unordered_map<std::size_t, std::size_t> occurance;
+        if (postfix.empty()) {
+            return occurance;
+        }
+        for (std::size_t num = 1; num <= postfix.size(); ++num) {
+            std::size_t pos = 0;
+            auto s = postfix.substr(postfix.size() - num, num);
+            while (true) {
+                pos = sample.find(s, pos);
+                if (pos == std::u32string::npos) {
+                    break;
+                }
+                /* std::cout << utf32toC(s) << ' ' << utf32toC(sample.substr(pos, num)) << '\n'; */
+                pos += num;
+                occurance.insert_or_assign(pos, num);
+            }
+        }
+        return occurance;
+    }
+
+    std::unordered_map<char32_t, double> suggestCandidatesMap(std::u32string const &prefix) {
+        constexpr std::size_t kMaxPrefix = 4;
+        std::u32string lastPrefix;
+        std::u32string beforePrefix;
+        if (prefix.size() > kMaxPrefix) {
+            lastPrefix = prefix.substr(prefix.size() - kMaxPrefix);
+            beforePrefix = prefix.substr(0, prefix.size() - kMaxPrefix + 1);
+        } else {
+            lastPrefix = prefix;
+        }
+        auto occurance = wordOccurances(sampleString, lastPrefix);
+        if (!beforePrefix.empty()) {
+            for (auto const &[word, logProb]: wordOccurances(beforePrefix, lastPrefix)) {
+                occurance[word] += logProb;
+            }
+        }
+        return occurance;
+    }
+
+    std::vector<WordCandidate> suggestCandidates(std::u32string const &prefix) {
+        std::vector<WordCandidate> result;
+        auto occurance = suggestCandidatesMap(prefix);
+        for (auto const &[word, logProb] : occurance) {
+            result.push_back({word, logProb * sampleEffectivity});
+        }
+        std::sort(result.begin(), result.end(), [](WordCandidate const &a, WordCandidate const &b) {
+            return a.score > b.score;
+        });
+        return result;
+    }
+
+    std::vector<WordCandidate> pinyinCandidates(std::u32string const &prefix, Pid pid) {
+        auto occurance = suggestCandidatesMap(prefix);
+        auto wordProbability = [&](char32_t word) -> double {
+            auto it = occurance.find(word);
+            double logProb = 0;
+            if (it != occurance.end()) {
+                logProb = it->second * sampleEffectivity;
+                occurance.erase(it);
+            }
+            return logProb;
+        };
+        std::vector<WordCandidate> candidates;
+        if (pid < 0) {
+            auto c = (char32_t)-pid;
+            candidates.push_back({c, wordProbability(c)});
+        } else {
+            auto it = lookupPinyinToWord.find(pid);
+            if (it != lookupPinyinToWord.end()) {
+                for (auto &c : it->second) {
+                    /* std::cout << utf32toC(c.word) << ' ' << wordProbability(c.word) << '\n'; */
+                    candidates.push_back({c.word, c.logFreq + wordProbability(c.word)});
+                }
+            }
+        }
+        std::sort(candidates.begin(), candidates.end(), [](WordCandidate const &a, WordCandidate const &b) {
+            return a.score > b.score;
+        });
+        return candidates;
+    }
+
     std::vector<std::vector<std::string>> simpleStringToPinyin(std::string const &str) {
         std::vector<std::vector<std::string>> result;
-        auto str32 = utf8to32(str);
+        auto str32 = utfCto32(str);
         result.reserve(str32.size());
         for (char32_t c : str32) {
             auto &back = result.emplace_back();
             auto pidSet = wordToPinyin(c);
             if (pidSet.empty()) {
-                back.push_back(utf32to8(c));
+                back.push_back(utf32toC(c));
             } else {
                 back.reserve(pidSet.size());
                 for (auto p: pidSet) {
@@ -187,11 +326,47 @@ struct PinyinDB {
         return matches;
     }
 
+    static std::vector<std::size_t> matchString(std::u32string const &s1, std::u32string const &s2) {
+        // find max sub-sequence length
+        std::size_t l1 = s1.size();
+        std::size_t l2 = s2.size();
+        std::vector<std::size_t> dp((l1 + 1) * (l2 + 1));
+        for (std::size_t i = 0; i < l1; ++i) {
+            std::size_t *dp0 = dp.data() + i * (l2 + 1);
+            std::size_t *dp1 = dp0 + (l2 + 1);
+            for (std::size_t j = 0; j < l2; ++j) {
+                if (s1[i] == s2[j]) {
+                    dp1[j + 1] = dp0[j] + 1;
+                } else {
+                    dp1[j + 1] = std::max(dp0[j + 1], dp1[j]);
+                }
+            }
+        }
+        // trace back to get matches
+        std::size_t i = l1, j = l2;
+        std::vector<std::size_t> matches;
+        while (i > 0 && j > 0) {
+            const std::size_t *dp1 = dp.data() + (i - 1) * (l2 + 1);
+            const std::size_t *dp0 = dp1 + (l2 + 1);
+            if (dp0[j] == dp1[j]) {
+                --i;
+            } else if (dp0[j] == dp0[j - 1]) {
+                --j;
+            } else {
+                matches.push_back(i - 1);
+                --i;
+                --j;
+            }
+        }
+        std::reverse(matches.begin(), matches.end());
+        return matches;
+    }
+
     static double matchScore(std::vector<std::size_t> const &matches, std::size_t targetLen, std::size_t expectSize) {
         if (matches.empty()) return 0;
         // first, compute the sum of differences squared
         // e.g. 2,5,6,7 -> (5-2)**2 + (6-5)**2 + (7-6)**2 = 9
-        std::uint32_t sumDiff = 0;
+        std::uint32_t sumDiff = 1;
         for (auto it = matches.begin(); it != matches.end(); ++it) {
             auto jt = it;
             ++jt;
@@ -200,10 +375,12 @@ struct PinyinDB {
                 sumDiff += delta * delta;
             }
         }
-        std::uint32_t delta = expectSize - matches.size() + 1;
-        sumDiff += delta * delta;
-        sumDiff += matches.front();
-        sumDiff += targetLen - matches.back();
+        if (targetLen && expectSize) {
+            std::uint32_t delta = expectSize - matches.size() + 1;
+            sumDiff += delta * delta;
+            sumDiff += matches.front();
+            sumDiff += targetLen - matches.back();
+        }
         // then, the score is 1 / the sum of differences squared
         return 1.0 / sumDiff;
     }
@@ -275,7 +452,7 @@ struct PinyinDB {
     }
 
     std::vector<std::string> simplePinyinSplit(std::string const &pinyin) {
-        auto pinyin32 = utf8to32(pinyin);
+        auto pinyin32 = utfCto32(pinyin);
         auto pids = pinyinSplit(pinyin32);
         std::vector<std::string> result;
         result.reserve(pids.size());
@@ -288,11 +465,11 @@ struct PinyinDB {
     std::vector<std::size_t> simpleMatchPinyin(
         std::vector<std::string> const &candidates, std::string const &query,
         std::size_t limit = (std::size_t)-1) {
-        auto qPids = pinyinSplit(utf8to32(query));
+        auto qPids = pinyinSplit(utfCto32(query));
         std::vector<std::vector<PidSet>> cPidSets;
         cPidSets.reserve(candidates.size());
         for (auto &c : candidates) {
-            cPidSets.emplace_back(stringToPinyin(utf8to32(c)));
+            cPidSets.emplace_back(stringToPinyin(utfCto32(c)));
         }
         auto matches = batchedMatchPinyin(cPidSets, qPids);
         sortMatchResults(matches);
@@ -389,7 +566,7 @@ struct PinyinDB {
                     }
                 }
                 active = activated[i];
-                text.append(utf32to8(source[i]));
+                text.append(utf32toC(source[i]));
             }
             if (active) {
                 text.append(hlEnd);

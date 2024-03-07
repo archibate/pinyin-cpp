@@ -1,0 +1,5 @@
+/home/bate/Codes/course/*/*.pptx
+/home/bate/Codes/course/stlseries/*/*.md
+/home/bate/Documents/*.pptx
+/home/bate/Downloads/*.pptx
+/home/bate/Codes/archibate.github.io/source/_posts/*.md
