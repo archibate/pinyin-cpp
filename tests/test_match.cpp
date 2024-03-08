@@ -1,5 +1,6 @@
 ﻿#include "pinyin.hpp"
 #include "pinyin_match.hpp"
+#include <iostream>
 
 using namespace pinyincpp;
 

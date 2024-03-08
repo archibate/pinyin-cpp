@@ -7,6 +7,7 @@ namespace pinyincpp {
 
 template <class K, class V, class Ks = std::vector<K>, class Vs = std::vector<V>>
 struct Trie {
+private:
     struct Node {
         std::map<K, Node> children;
         Vs values;
@@ -73,7 +74,7 @@ public:
     }
 
     template <class Visit>
-    bool findPrefix(Ks const &keys, Visit &&visit, std::size_t depthLimit = (std::size_t)-1) const {
+    bool visitPrefix(Ks const &keys, Visit &&visit, std::size_t depthLimit = (std::size_t)-1) const {
         Node const *current = &root;
         for (K const &key : keys) {
             auto it = current->children.find(key);
@@ -83,6 +84,11 @@ public:
             current = &it->second;
         }
         return visitItems(*current, keys, visit, depthLimit);
+    }
+
+    template <class Visit>
+    bool visitItems(Visit &&visit, std::size_t depthLimit = (std::size_t)-1) const {
+        return visitItems(root, Ks(), visit, depthLimit);
     }
 
     std::vector<std::pair<Ks, V>> getItems() const {
@@ -104,6 +110,9 @@ private:
             if (visit(keys, v)) {
                 return true;
             }
+        }
+        if (depthLimit <= 1) {
+            return false;
         }
         for (auto const &child : node.children) {
             Ks newKeys = keys;

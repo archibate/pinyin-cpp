@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <iostream>
 #include <sstream>
 #include <algorithm>
 #include <string>
@@ -11,23 +10,26 @@
 #include <vector>
 #include "utf8.hpp"
 #include "pinyin.hpp"
+#include "sort_top_n.hpp"
 #include "pinyin_words.hpp"
+#include "ctype.hpp"
 
 namespace pinyincpp {
 
 struct PinyinInput {
-    static constexpr std::size_t kMaxPrefix = 4;
-
+public:
     struct CharCandidate {
         char32_t character;
         double score;
     };
 
     struct WordCandidate {
-        std::u32string word;
         double score;
+        std::u32string word;
+        std::vector<Pid> pinyin;
     };
 
+private:
     struct SampleString {
         std::u32string content;
         double effectivity;
@@ -36,18 +38,28 @@ struct PinyinInput {
     std::vector<SampleString> sampleStrings;
     double prefixEffectivity = 5.0;
 
-    void addSampleString(std::u32string const &sample, double effectivity = 5.0) {
+public:
+    void setPrefixEffectivity(double effectivity = 1.0) {
+        prefixEffectivity = effectivity;
+    }
+
+    void addSampleString(std::u32string const &sample, double effectivity = 1.0) {
         sampleStrings.push_back({sample, effectivity});
     }
 
-    void addSampleString(std::string const &sample, double effectivity = 5.0) {
+    void addSampleString(std::string const &sample, double effectivity = 1.0) {
         addSampleString(utfCto32(sample), effectivity);
     }
 
+    void clearSampleStrings() {
+        sampleStrings.clear();
+    }
+
+private:
     static std::unordered_map<std::size_t, std::size_t> searchStringPostfix(std::u32string const &sample, std::u32string const &postfix) {
         // find postfix occurance in sample
         std::unordered_map<std::size_t, std::size_t> occurance;
-        if (postfix.empty()) {
+        if (postfix.empty()) [[unlikely]] {
             return occurance;
         }
         for (std::size_t num = 1; num <= postfix.size(); ++num) {
@@ -68,7 +80,7 @@ struct PinyinInput {
     static std::unordered_map<char32_t, double> charOccurances(
         std::u32string const &sample, std::u32string const &prefix, std::vector<double> const &scoreTable) {
         std::unordered_map<char32_t, double> occurance;
-        if (sample.empty() || scoreTable.empty()) {
+        if (sample.empty() || scoreTable.empty()) [[unlikely]] {
             return occurance;
         }
         // find occurance in in sampleString
@@ -94,7 +106,7 @@ struct PinyinInput {
     static void mulScoreWordOccurances(std::vector<WordCandidate> &words, double effectivity,
         std::u32string const &sample, std::u32string const &prefix, std::vector<double> const &scoreTable) {
         std::vector<double> occurance(words.size());
-        if (sample.empty() || scoreTable.empty()) {
+        if (sample.empty() || scoreTable.empty()) [[unlikely]] {
             return;
         }
         auto maxScore = std::min(prefix.size(), scoreTable.size());
@@ -102,7 +114,7 @@ struct PinyinInput {
         for (std::size_t w = 0; w < words.size(); ++w) {
             auto &word = words[w];
             double count = 0;
-            for (std::size_t pos = 0; (pos = sample.find(word.word.size(), pos)) != std::u32string::npos; pos += word.word.size()) {
+            for (std::size_t pos = 0; (pos = sample.find(word.word, pos)) != std::u32string::npos; pos += word.word.size()) {
                 std::size_t s = 0;
                 for (; s < std::min(maxScore, pos + 1); ++s) {
                     if (prefix[prefix.size() - 1 - s] == sample[pos - s]) {
@@ -119,6 +131,7 @@ struct PinyinInput {
     std::unordered_map<char32_t, double> suggestCharCandidatesMap(std::u32string const &prefix) {
         std::u32string lastPrefix;
         std::u32string beforePrefix;
+        constexpr std::size_t kMaxPrefix = 4;
         if (prefix.size() > kMaxPrefix) {
             lastPrefix = prefix.substr(prefix.size() - kMaxPrefix);
             beforePrefix = prefix.substr(0, prefix.size() - kMaxPrefix + 1);
@@ -140,28 +153,37 @@ struct PinyinInput {
         return occurance;
     }
 
-    std::vector<CharCandidate> suggestCharCandidates(std::u32string const &prefix) {
-        std::vector<CharCandidate> result;
+public:
+    std::vector<CharCandidate> suggestCharCandidates(std::u32string const &prefix, std::size_t numResults = 100, bool chineseOnly = true) {
+        std::vector<CharCandidate> candidates;
         auto occurance = suggestCharCandidatesMap(prefix);
         for (auto const &[character, logProb] : occurance) {
-            result.push_back({character, logProb});
+            if (!chineseOnly || isChineseCharacter(character)) {
+                candidates.push_back({character, logProb});
+            }
         }
-        std::sort(result.begin(), result.end(), [](CharCandidate const &a, CharCandidate const &b) {
-            return a.score > b.score;
-        });
-        return result;
+        sortTopN(candidates, numResults, &CharCandidate::score);
+        return candidates;
     }
 
-    std::vector<WordCandidate> pinyinWordCandidates(PinyinDB &db, PinyinWordsDB &wd, std::u32string const &prefix, std::vector<Pid> const &pids, std::size_t depthLimit = 2) {
+    std::vector<WordCandidate> pinyinWordCandidates(PinyinDB &db, PinyinWordsDB &wd, std::u32string const &prefix, std::vector<Pid> const &pids, std::size_t numResults = 100, std::size_t depthLimit = 2) {
         std::vector<WordCandidate> candidates;
-        if (pids.empty()) return candidates;
-        wd.triePinyinToWord.findPrefix(pids, [&] (std::vector<Pid> const &fullPids, std::size_t const &wordIndex) {
-            auto const &w = wd.wordData[wordIndex];
-            candidates.push_back({w.word, w.score * pids.size() / (fullPids.size() + 1)});
-            return false;
-        }, depthLimit);
+        if (!pids.empty()) {
+            wd.triePinyinToWord.visitPrefix(pids, [&] (std::vector<Pid> const &fullPids, std::size_t const &wordIndex) {
+                auto const &w = wd.wordData[wordIndex];
+                candidates.push_back({w.score * pids.size() / (fullPids.size() + 1), w.word, fullPids});
+                return false;
+            }, depthLimit);
+        } else {
+            wd.triePinyinToWord.visitItems([&] (std::vector<Pid> const &fullPids, std::size_t const &wordIndex) {
+                auto const &w = wd.wordData[wordIndex];
+                candidates.push_back({w.score * pids.size() / (fullPids.size() + 1), w.word, fullPids});
+                return false;
+            }, depthLimit);
+        }
         std::u32string lastPrefix;
         std::u32string beforePrefix;
+        constexpr std::size_t kMaxPrefix = 4;
         if (prefix.size() > kMaxPrefix) {
             lastPrefix = prefix.substr(prefix.size() - kMaxPrefix);
             beforePrefix = prefix.substr(0, prefix.size() - kMaxPrefix + 1);
@@ -175,13 +197,14 @@ struct PinyinInput {
         if (!beforePrefix.empty()) {
             mulScoreWordOccurances(candidates, prefixEffectivity, beforePrefix, lastPrefix, scoreTable);
         }
-        std::sort(candidates.begin(), candidates.end(), [](WordCandidate const &a, WordCandidate const &b) {
-            return a.score > b.score;
-        });
+        /* std::erase_if(candidates, [](WordCandidate const &a) { */
+        /*     return a.score <= 0; */
+        /* }); */
+        sortTopN(candidates, numResults, &WordCandidate::score);
         return candidates;
     }
 
-    std::vector<CharCandidate> pinyinCharCandidates(PinyinDB &db, std::u32string const &prefix, Pid pid) {
+    std::vector<CharCandidate> pinyinCharCandidates(PinyinDB &db, std::u32string const &prefix, Pid pid, std::size_t numResults = 100) {
         auto occurance = suggestCharCandidatesMap(prefix);
         auto charProbability = [&](char32_t character) -> double {
             auto it = occurance.find(character);
@@ -194,19 +217,14 @@ struct PinyinInput {
         };
         std::vector<CharCandidate> candidates;
         if (pid < 0) {
-            auto c = (char32_t)-pid;
+            auto c = extractSpecialPid(pid);
             candidates.push_back({c, charProbability(c)});
         } else {
-            auto it = db.lookupPinyinToChar.find(pid);
-            if (it != db.lookupPinyinToChar.end()) {
-                for (auto &c : it->second) {
-                    candidates.push_back({c.character, c.logFrequency + charProbability(c.character)});
-                }
+            for (auto const &c : db.pinyinToChar(pid)) {
+                candidates.push_back({c.character, c.logFrequency + charProbability(c.character)});
             }
         }
-        std::sort(candidates.begin(), candidates.end(), [](CharCandidate const &a, CharCandidate const &b) {
-            return a.score > b.score;
-        });
+        sortTopN(candidates, numResults, &CharCandidate::score);
         return candidates;
     }
 };

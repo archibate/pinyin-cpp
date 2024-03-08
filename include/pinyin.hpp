@@ -17,6 +17,18 @@ extern const unsigned long long chars_csv_size;
 
 using Pid = std::int32_t;
 
+inline bool isSpecialPid(Pid pid) {
+    return pid < 0;
+}
+
+inline char32_t extractSpecialPid(Pid pid) {
+    return -1 - pid;
+}
+
+inline Pid makeSpecialPid(char32_t c) {
+    return -1 - c;
+}
+
 struct PidTone {
     Pid pid;
     std::uint8_t tone;
@@ -31,18 +43,26 @@ struct PinyinDB {
         double logFrequency;
     };
 
-    struct CharData : CharInfo {
-        PidToneSet pinyin;
-    };
-
     struct PinyinInfo {
         double logFrequency;
         PidSet pinyin;
     };
 
+private:
+    struct CharData : CharInfo {
+        PidToneSet pinyin;
+    };
+
     std::vector<CharData> charData;
     std::vector<std::string> pinyinData;
+    std::unordered_map<std::string, Pid> lookupPinyinToPid;
+    std::unordered_set<std::string> lookupPinyinPrefixSet;
+    std::unordered_map<Pid, std::vector<CharInfo>> lookupPinyinToChar;
+    std::unordered_map<char32_t, PinyinInfo> lookupCharToPinyin;
 
+    friend struct PinyinEnglify;
+
+public:
     PinyinDB() {
         {
             std::istringstream charsCsvIn(std::string(chars_csv, chars_csv_size));
@@ -97,23 +117,22 @@ struct PinyinDB {
         }
     }
 
-    std::unordered_map<std::string, Pid> lookupPinyinToPid;
-    std::unordered_set<std::string> lookupPinyinPrefixSet;
-    std::unordered_map<Pid, std::vector<CharInfo>> lookupPinyinToChar;
-    std::unordered_map<char32_t, PinyinInfo> lookupCharToPinyin;
-
     Pid pinyinId(std::string const &pinyin) {
         auto it = lookupPinyinToPid.find(pinyin);
         if (it == lookupPinyinToPid.end()) [[unlikely]] {
-            return (Pid)-1;
+            return makeSpecialPid(0);
         } else {
             return it->second;
         }
     }
 
+    Pid pinyinPidLimit() const noexcept {
+        return pinyinData.size();
+    }
+
     std::string pinyinName(Pid pinyin) {
-        if (pinyin < 0) {
-            return utf32toC((char32_t)-pinyin);
+        if (isSpecialPid(pinyin)) {
+            return utf32toC(extractSpecialPid(pinyin));
         }
         if (pinyin >= pinyinData.size()) [[unlikely]] {
             return {};
@@ -148,16 +167,16 @@ struct PinyinDB {
         }
     }
 
-    std::vector<PidSet> stringToPinyin(std::u32string const &str) {
+    std::vector<PidSet> stringToPinyin(std::u32string const &str, bool ignoreCase = false) {
         std::vector<PidSet> result;
         result.reserve(str.size());
         for (char32_t c : str) {
-            if ('A' <= c && c <= 'Z') {
-                c += 'a' - 'A';
-            } else if (c == 0) {
-                c = ' ';
+            if (ignoreCase) {
+                if ('A' <= c && c <= 'Z') {
+                    c += 'a' - 'A';
+                }
             }
-            result.emplace_back(charToPinyin(c)).push_back(-(Pid)c);
+            result.emplace_back(charToPinyin(c)).push_back(makeSpecialPid(c));
         }
         return result;
     }
@@ -181,7 +200,7 @@ struct PinyinDB {
         return result;
     }
 
-    std::vector<Pid> pinyinSplit(std::u32string const &pinyin, bool ignoreCase = false, char32_t sepChar = U'\'') {
+    std::vector<Pid> pinyinSplit(std::u32string const &pinyin, bool ignoreCase = false, char32_t sepChar = U' ') {
         std::vector<Pid> result;
         std::string token;
         bool status = false;
@@ -209,7 +228,7 @@ struct PinyinDB {
                                 c += 'a' - 'A';
                             }
                         }
-                        result.push_back(-(Pid)c);
+                        result.push_back(makeSpecialPid(c));
                     }
                 }
                 token.clear();
@@ -225,13 +244,27 @@ struct PinyinDB {
         return result;
     }
 
-    std::vector<std::string> simplePinyinSplit(std::string const &pinyin, bool ignoreCase = false, char32_t sepChar = U'\'') {
+    std::vector<std::string> simplePinyinSplit(std::string const &pinyin, bool ignoreCase = false, char32_t sepChar = U' ') {
         auto pinyin32 = utfCto32(pinyin);
         auto pids = pinyinSplit(pinyin32, ignoreCase, sepChar);
         std::vector<std::string> result;
         result.reserve(pids.size());
         for (auto p : pids) {
             result.push_back(pinyinName(p));
+        }
+        return result;
+    }
+
+    std::string pinyinConcat(std::vector<Pid> const &pids, char32_t sepChar = U' ') {
+        std::string result;
+        bool first = true;
+        for (auto p: pids) {
+            if (first) {
+                first = false;
+            } else {
+                result.push_back(sepChar);
+            }
+            result.append(pinyinName(p));
         }
         return result;
     }

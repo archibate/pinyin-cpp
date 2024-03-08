@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <iostream>
 #include <sstream>
 #include <algorithm>
 #include <string>
@@ -10,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 #include "utf8.hpp"
+#include "sort_top_n.hpp"
 #include "pinyin.hpp"
 
 namespace pinyincpp {
@@ -88,7 +88,7 @@ struct PinyinMatch {
     }
 
     static double matchScore(std::vector<std::size_t> const &matches, std::size_t targetLen, std::size_t expectSize) {
-        if (matches.empty()) return 0;
+        if (matches.empty()) [[unlikely]] return 0;
         // first, compute the sum of differences squared
         // e.g. 2,5,6,7 -> (5-2)**2 + (6-5)**2 + (7-6)**2 = 9
         std::uint32_t sumDiff = 1;
@@ -121,35 +121,29 @@ struct PinyinMatch {
         for (std::size_t i = 0; i < p1s.size(); ++i) {
             auto highlights = matchPinyin(p1s[i], p2);
             double score = matchScore(highlights, p1s[i].size(), p2.size());
-            if (score > 0) {
+            if (score > 0) [[likely]] {
                 matches.push_back({i, score, highlights});
             }
         }
         return matches;
     }
 
-    static void sortMatchResults(std::vector<MatchResult> &matches) {
-        std::sort(matches.begin(), matches.end(), [] (MatchResult const &a, MatchResult const &b) {
-            return a.score > b.score;
-        });
-    }
-
     std::vector<std::size_t> simpleMatchPinyin(PinyinDB &db,
         std::vector<std::string> const &candidates, std::string const &query,
-        std::size_t limit = (std::size_t)-1) {
+        std::size_t numResults = (std::size_t)-1) {
         auto qPids = db.pinyinSplit(utfCto32(query), true);
         std::vector<std::vector<PidSet>> cPidSets;
         cPidSets.reserve(candidates.size());
         for (auto &c : candidates) {
-            cPidSets.emplace_back(db.stringToPinyin(utfCto32(c)));
+            cPidSets.emplace_back(db.stringToPinyin(utfCto32(c), true));
         }
         auto matches = batchedMatchPinyin(cPidSets, qPids);
-        sortMatchResults(matches);
+        sortTopN(matches, numResults, &MatchResult::score);
         std::vector<std::size_t> indices;
-        indices.reserve(std::min(limit, matches.size()));
+        indices.reserve(std::min(numResults, matches.size()));
         for (auto const &m: matches) {
             indices.push_back(m.index);
-            if (indices.size() >= limit) break;
+            if (indices.size() >= numResults) break;
         }
         return indices;
     }
@@ -157,7 +151,7 @@ struct PinyinMatch {
     template <class Id>
     std::vector<Id> simpleAliasedMatchPinyin(PinyinDB &db,
         std::vector<std::pair<Id, std::vector<std::string>>> const &candidates, std::string const &query,
-        std::size_t limit = (std::size_t)-1) {
+        std::size_t numResults = (std::size_t)-1) {
         auto qPids = db.pinyinSplit(utfCto32(query), true);
         std::vector<std::vector<PidSet>> cPidSets;
         std::vector<std::size_t> aliasTargets;
@@ -165,7 +159,7 @@ struct PinyinMatch {
         aliasTargets.reserve(candidates.size());
         for (std::size_t i = 0; i < candidates.size(); ++i) {
             for (auto &c : candidates[i].second) {
-                cPidSets.emplace_back(db.stringToPinyin(utfCto32(c)));
+                cPidSets.emplace_back(db.stringToPinyin(utfCto32(c), true));
                 aliasTargets.emplace_back(i);
             }
         }
@@ -185,13 +179,12 @@ struct PinyinMatch {
                 }
             }
         }
-        sortMatchResults(uniqueMatches);
+        sortTopN(uniqueMatches, numResults, &MatchResult::score);
         std::vector<Id> ids;
-        ids.reserve(std::min(limit, uniqueMatches.size()));
+        ids.reserve(std::min(numResults, uniqueMatches.size()));
         for (auto const &m: uniqueMatches) {
-            /* std::cout << "index: " << m.index << " score: " << m.score << " text: " << candidates[m.index].first << std::endl; */
             ids.push_back(candidates[m.index].first);
-            if (ids.size() >= limit) break;
+            if (ids.size() >= numResults) break;
         }
         return ids;
     }
@@ -203,25 +196,25 @@ struct PinyinMatch {
     };
 
     std::vector<HighlightMatchResult> simpleHighlightMatchPinyin(PinyinDB &db,
-        std::vector<std::string> const &candidates, std::string const &query, std::size_t limit = (std::size_t)-1,
+        std::vector<std::string> const &candidates, std::string const &query, std::size_t numResults = (std::size_t)-1,
         std::string const &hlBegin = "<em>", std::string const &hlEnd = "</em>") {
         auto qPids = db.pinyinSplit(utfCto32(query), true);
-        std::vector<std::u32string> candidates32;
+        std::vector<std::u32string> candidatesUtf32;
         for (auto s : candidates) {
-            candidates32.emplace_back(utfCto32(s));
+            candidatesUtf32.emplace_back(utfCto32(s));
         }
         std::vector<std::vector<PidSet>> results;
         results.reserve(candidates.size());
-        for (auto &c : candidates32) {
-            results.emplace_back(db.stringToPinyin(c));
+        for (auto &c : candidatesUtf32) {
+            results.emplace_back(db.stringToPinyin(c, true));
         }
         auto matches = batchedMatchPinyin(results, qPids);
-        sortMatchResults(matches);
+        sortTopN(matches, numResults, &MatchResult::score);
         std::vector<HighlightMatchResult> result;
-        result.reserve(std::min(limit, matches.size()));
+        result.reserve(std::min(numResults, matches.size()));
         for (auto const &m: matches) {
             std::string text;
-            std::u32string source = candidates32[m.index];
+            std::u32string source = candidatesUtf32[m.index];
             std::vector<bool> activated(source.size());
             for (std::size_t highlight : m.highlights) {
                 activated[highlight] = true;
@@ -244,7 +237,7 @@ struct PinyinMatch {
                 text.append(hlEnd);
             }
             result.push_back({m.index, m.score, text});
-            if (result.size() >= limit) break;
+            if (result.size() >= numResults) break;
         }
         return result;
     }
