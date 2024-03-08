@@ -14,9 +14,10 @@ int main() {
         std::ifstream fin("/tmp/words.txt");
         ps.onDefineWords(std::string(std::istreambuf_iterator<char>{fin}, std::istreambuf_iterator<char>{}), 1.0);
     }
-    auto res = ps.onInput("xiao1peng2laoshi", 10);
+    auto res = ps.onInput("我是可爱的", "xiao1peng2laoshi", 10);
+    std::cout << '[' << res.fixedPrefix << ']' << '\n';
     for (auto c: res.candidates) {
-        std::cout << c.text << '[' << c.enggy << ']' << c.score << '\n';
+        std::cout << '[' << c.text << '|' << c.enggy << ']' << c.score << '\n';
     }
     return 0;
 }

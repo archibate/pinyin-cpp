@@ -139,7 +139,7 @@ private:
             lastPrefix = prefix;
         }
         std::unordered_map<char32_t, double> occurance;
-        const std::vector<double> scoreTable = {0.2, 1, 4, 8, 10};
+        const std::vector<double> scoreTable = {0.08, 1, 4, 8, 10};
         for (auto const &sample: sampleStrings) {
             for (auto const &[character, logProb]: charOccurances(sample.content, lastPrefix, scoreTable)) {
                 occurance[character] += logProb * sample.effectivity;
@@ -190,7 +190,7 @@ public:
         } else {
             lastPrefix = prefix;
         }
-        const std::vector<double> scoreTable = {0.2, 1, 4, 8, 10};
+        const std::vector<double> scoreTable = {0.08, 1, 4, 8, 10};
         for (auto const &sample: sampleStrings) {
             mulScoreWordOccurances(candidates, sample.effectivity, sample.content, lastPrefix, scoreTable);
         }

@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <sstream>
-#include <iostream>
 #include <string>
 #include <vector>
 #include "utf8.hpp"
@@ -72,7 +71,6 @@ struct PinyinWordsDB {
             }
             score /= std::max(1.0, (double)num);
             auto pinyin = db.pinyinSplit(utfCto32(pinyinStr), U' ');
-            std::cout << "pinyin: " << db.pinyinConcat(pinyin) << ", words: " << wordStr << '\n';
             wordsToAdd.push_back(wordData.size());
             wordData.push_back({wordUtf32, score * effectivity, pinyin});
             triePinyinToWord.batchedInsert(pinyin, std::move(wordsToAdd));
