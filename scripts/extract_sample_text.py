@@ -8,7 +8,8 @@ from multiprocessing import Pool, cpu_count
 import pypinyin
 
 files = []
-with open("files.txt") as fin:
+this_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+with open(os.path.join(this_dir, "sample_text_files.txt")) as fin:
     for line in fin:
         line = line.strip()
         if line:
