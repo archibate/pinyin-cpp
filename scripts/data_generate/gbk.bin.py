@@ -1,5 +1,5 @@
 
-with open('gbk.bin', 'wb') as f:
+with open('build/gbk.bin', 'wb') as f:
     for hi in range(0x81, 0xfe + 1):
         for lo in range(0x40, 0xfe + 1):
             n = hi << 8 | lo

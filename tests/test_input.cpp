@@ -1,4 +1,5 @@
 ﻿#include "pinyin.hpp"
+#include "pinyin_words.hpp"
 #include "pinyin_input.hpp"
 #include <fstream>
 #include <iomanip>
@@ -10,12 +11,13 @@ using namespace pinyincpp;
 int main() {
     PinyinInput im;
     PinyinDB db;
+    PinyinWordsDB wd(db);
     {
         std::ifstream fin("/tmp/extract.txt");
-        im.addSampleString(std::string(std::istreambuf_iterator<char>{fin}, std::istreambuf_iterator<char>{}), 5.0);
+        im.addSampleString(std::string(std::istreambuf_iterator<char>{fin}, std::istreambuf_iterator<char>{}));
     }
-    for (auto c: im.pinyinWordCandidates(db, U"我们小", db.pinyinSplit(U"peng").front())) {
-        std::cout << (c.word == '\n' ? "\\n" : utf32toC(c.word)) << ' ' << c.score << std::endl;
+    for (auto c: im.pinyinWordCandidates(db, wd, U"我们小", db.pinyinSplit(U"peng"))) {
+        std::cout << utf32toC(c.word) << ' ' << c.score << std::endl;
     }
     return 0;
 }

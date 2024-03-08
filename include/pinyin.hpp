@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <iostream>
 #include <sstream>
 #include <algorithm>
 #include <string>
@@ -27,74 +26,67 @@ using PidSet = std::vector<Pid>;
 using PidToneSet = std::vector<PidTone>;
 
 struct PinyinDB {
-    struct WordInfo {
-        char32_t word;
-        double logFreq;
+    struct CharInfo {
+        char32_t character;
+        double logFrequency;
     };
 
-    struct WordData : WordInfo {
+    struct CharData : CharInfo {
         PidToneSet pinyin;
     };
 
-    struct PinyinData {
-        std::string pinyin;
+    struct PinyinInfo {
+        double logFrequency;
+        PidSet pinyin;
     };
 
-    std::vector<WordData> wordData;
-    std::vector<PinyinData> pinyinData;
-
-    static PinyinDB &instance() {
-        static PinyinDB db;
-        return db;
-    }
+    std::vector<CharData> charData;
+    std::vector<std::string> pinyinData;
 
     PinyinDB() {
-        /* double sumLogFreq = 0; */
-        std::istringstream fin(std::string(chars_csv, chars_csv_size));
-        std::string line;
-        while (std::getline(fin, line)) {
-            std::string tmp;
-            std::istringstream iss(line);
-            std::getline(iss, tmp, ',');
-            char32_t word = std::stoul(tmp);
-            std::getline(iss, tmp, ',');
-            std::uint32_t freq = std::stoul(tmp);
-            PidToneSet pinyinToned;
-            std::unordered_set<Pid> addedPinyin;
-            while (std::getline(iss, tmp, '/')) {
-                std::uint8_t tone = 0;
-                if ('0' <= tmp.back() && tmp.back() <= '9') {
-                    tone = tmp.back() - '0';
-                    tmp.pop_back();
+        {
+            std::istringstream charsCsvIn(std::string(chars_csv, chars_csv_size));
+            std::string line;
+            while (std::getline(charsCsvIn, line)) {
+                std::string tmp;
+                std::istringstream lineIn(line);
+                std::getline(lineIn, tmp, ',');
+                char32_t character = std::stoul(tmp);
+                std::getline(lineIn, tmp, ',');
+                std::uint32_t frequency = std::stoul(tmp);
+                PidToneSet pinyinToned;
+                std::unordered_set<Pid> addedPinyin;
+                while (std::getline(lineIn, tmp, '/')) {
+                    std::uint8_t tone = 0;
+                    if ('0' <= tmp.back() && tmp.back() <= '9') {
+                        tone = tmp.back() - '0';
+                        tmp.pop_back();
+                    }
+                    auto [it, success] = lookupPinyinToPid.try_emplace(tmp, pinyinData.size());
+                    Pid pid = it->second;
+                    if (addedPinyin.insert(pid).second) {
+                        pinyinToned.push_back({pid, tone});
+                    }
+                    if (success) {
+                        pinyinData.push_back(tmp);
+                    }
                 }
-                auto [it, success] = lookupPinyinToPid.insert({tmp, pinyinData.size()});
-                Pid pid = it->second;
-                if (addedPinyin.insert(pid).second) {
-                    pinyinToned.push_back({pid, tone});
-                }
-                if (success) {
-                    pinyinData.push_back({tmp});
-                }
-            }
-            auto logFreq = std::log(freq + 2);
-            wordData.push_back({word, logFreq, std::move(pinyinToned)});
-            /* sumLogFreq += logFreq; */
-        }
-        /* auto scaleLogFreq = 1 / (1 + sumLogFreq / (wordData.size() + 1)); */
-        /* for (auto &c : wordData) { */
-        /*     c.logFreq = c.logFreq * scaleLogFreq; */
-        /* } */
-        for (const auto &c : wordData) {
-            for (auto p : c.pinyin) {
-                lookupPinyinToWord[p.pid].push_back(static_cast<WordInfo>(c));
+                auto logFrequency = std::log(frequency + 2);
+                charData.push_back({character, logFrequency, std::move(pinyinToned)});
             }
         }
-        for (const auto &c : wordData) {
-            auto pidSet = lookupWordToPinyin[c.word];
+        for (const auto &c : charData) {
+            for (auto const &p : c.pinyin) {
+                lookupPinyinToChar[p.pid].push_back(static_cast<CharInfo const &>(c));
+            }
+        }
+        for (const auto &c : charData) {
+            auto &pinInfo = lookupCharToPinyin[c.character];
+            pinInfo.logFrequency = c.logFrequency;
             std::unordered_set<Pid> addedPinyin;
             for (auto const &p: c.pinyin) {
                 if (addedPinyin.insert(p.pid).second) {
-                    pidSet.push_back(p.pid);
+                    pinInfo.pinyin.push_back(p.pid);
                 }
             }
         }
@@ -107,8 +99,8 @@ struct PinyinDB {
 
     std::unordered_map<std::string, Pid> lookupPinyinToPid;
     std::unordered_set<std::string> lookupPinyinPrefixSet;
-    std::unordered_map<Pid, std::vector<WordInfo>> lookupPinyinToWord;
-    std::unordered_map<char32_t, PidSet> lookupWordToPinyin;
+    std::unordered_map<Pid, std::vector<CharInfo>> lookupPinyinToChar;
+    std::unordered_map<char32_t, PinyinInfo> lookupCharToPinyin;
 
     Pid pinyinId(std::string const &pinyin) {
         auto it = lookupPinyinToPid.find(pinyin);
@@ -124,26 +116,35 @@ struct PinyinDB {
             return utf32toC((char32_t)-pinyin);
         }
         if (pinyin >= pinyinData.size()) [[unlikely]] {
-            return "";
+            return {};
         }
-        return pinyinData[pinyin].pinyin;
+        return pinyinData[pinyin];
     }
 
-    std::vector<WordInfo> pinyinToWord(Pid p) {
-        auto it = lookupPinyinToWord.find(p);
-        if (it == lookupPinyinToWord.end()) {
+    std::vector<CharInfo> pinyinToChar(Pid p) {
+        auto it = lookupPinyinToChar.find(p);
+        if (it == lookupPinyinToChar.end()) {
             return {};
         } else {
             return it->second;
         }
     }
 
-    PidSet wordToPinyin(char32_t word) {
-        auto it = lookupWordToPinyin.find(word);
-        if (it == lookupWordToPinyin.end()) {
+    PidSet charToPinyin(char32_t character) {
+        auto it = lookupCharToPinyin.find(character);
+        if (it == lookupCharToPinyin.end()) {
             return {};
         } else {
-            return it->second;
+            return it->second.pinyin;
+        }
+    }
+
+    double charLogFrequency(char32_t character) {
+        auto it = lookupCharToPinyin.find(character);
+        if (it == lookupCharToPinyin.end()) {
+            return 0;
+        } else {
+            return it->second.logFrequency;
         }
     }
 
@@ -156,7 +157,7 @@ struct PinyinDB {
             } else if (c == 0) {
                 c = ' ';
             }
-            result.emplace_back(wordToPinyin(c)).push_back(-(Pid)c);
+            result.emplace_back(charToPinyin(c)).push_back(-(Pid)c);
         }
         return result;
     }
@@ -167,7 +168,7 @@ struct PinyinDB {
         result.reserve(str32.size());
         for (char32_t c : str32) {
             auto &back = result.emplace_back();
-            auto pidSet = wordToPinyin(c);
+            auto pidSet = charToPinyin(c);
             if (pidSet.empty()) {
                 back.push_back(utf32toC(c));
             } else {
