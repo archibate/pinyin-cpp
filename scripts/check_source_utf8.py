@@ -2,8 +2,10 @@ import os
 
 # walk current directory:
 for root, dirs, files in os.walk("."):
-    if root != '.' and (root.startswith('.') or root == 'build'):
-        continue
+    if root != '.':
+        # print(root, [base for base in root.split(os.path.sep)[1:]])
+        if any(base == 'build' or base.startswith('.') for base in root.split(os.path.sep)[1:]):
+            continue
     # loop through files:
     for file in files:
         # check if file is utf-8 encoded:
