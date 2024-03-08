@@ -72,10 +72,11 @@ public:
         return charToEnggy(c);
     }
 
-    std::string enggyToString(std::string const &enggy, std::size_t *ppos = nullptr) {
+    std::string enggyToString(std::string const &enggy, std::size_t *ppos = nullptr, std::size_t *dppos = nullptr) {
         std::size_t pos, bpos, epos;
         std::string result;
         if (ppos) *ppos = 0;
+        if (dppos) *dppos = 0;
         for (pos = 0; pos != std::u32string::npos; pos = epos) {
             bpos = enggy.find_first_of("abcdefghijklmnopqrstuvwxyz", pos);
             if (bpos != pos) {
@@ -90,7 +91,8 @@ public:
                 char32_t c = enggyToChar(chunk);
                 if (c) {
                     result.append(utf32toC(c));
-                    if (ppos) *ppos = result.size();
+                    if (ppos) *ppos = epos;
+                    if (dppos) *dppos = result.size();
                 } else {
                     result.append(chunk);
                 }

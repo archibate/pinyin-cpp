@@ -200,7 +200,8 @@ public:
         return result;
     }
 
-    std::vector<Pid> pinyinSplit(std::u32string const &pinyin, bool ignoreCase = false, char32_t sepChar = U' ') {
+    std::vector<Pid> pinyinSplit(std::u32string const &pinyin, bool ignoreCase = false,
+                                 char32_t sepChar = U' ', std::vector<std::size_t> *indices = nullptr) {
         std::vector<Pid> result;
         std::string token;
         bool status = false;
@@ -218,6 +219,7 @@ public:
                     auto it = lookupPinyinToPid.find(token);
                     if (it != lookupPinyinToPid.end()) {
                         result.push_back(it->second);
+                        if (indices) indices->push_back(i);
                     }
                     status = false;
                     --i;
@@ -229,6 +231,7 @@ public:
                             }
                         }
                         result.push_back(makeSpecialPid(c));
+                        if (indices) indices->push_back(i + 1);
                     }
                 }
                 token.clear();
@@ -238,6 +241,14 @@ public:
             auto it = lookupPinyinToPid.find(token);
             if (it != lookupPinyinToPid.end()) {
                 result.push_back(it->second);
+                if (indices) indices->push_back(pinyin.size());
+            } else {
+                std::size_t off = token.size();
+                for (char32_t c : token) {
+                    result.push_back(makeSpecialPid(c));
+                    --off;
+                    if (indices) indices->push_back(pinyin.size() - off);
+                }
             }
             status = 0;
         }
