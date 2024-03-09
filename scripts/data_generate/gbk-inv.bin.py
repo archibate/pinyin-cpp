@@ -1,4 +1,4 @@
-with open('build/gbk-inv.bin', 'wb') as f:
+with open('data/gbk-inv.bin', 'wb') as f:
     for c in range(0, 0xffff):
         s = chr(c)
         try:

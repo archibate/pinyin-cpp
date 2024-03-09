@@ -1,7 +1,4 @@
-#include "pinyin.hpp"
-#include "pinyin_words.hpp"
-#include "pinyin_input.hpp"
-#include "pinyin_englify.hpp"
+#include <pinyincpp/pinyin_englify.hpp>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -26,7 +23,7 @@ int main() {
     std::cout << "- pos: " << pos << std::endl;
     std::string past = s.substr(0, pos);
     std::string rest = s.substr(pos);
-    auto pids = db.pinyinSplit(utfCto32(rest), false, U'0');
+    auto pids = db.pinyinSplit(utfCto32(rest));
     for (auto c: im.pinyinWordCandidates(db, wd, utfCto32(past), pids)) {
         std::string enggy;
         for (std::size_t i = 0; i < c.word.size(); i++) {
