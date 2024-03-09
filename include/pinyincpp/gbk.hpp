@@ -4,17 +4,15 @@
 #include <string>
 #include <string_view>
 #include <pinyincpp/utf8.hpp>
+#include <pinyincpp/resources.hpp>
 
 namespace pinyincpp {
-
-extern const char gbk_bin[];
-extern const unsigned long long gbk_bin_size;
-extern const char gbk_inv_bin[];
-extern const unsigned long long gbk_inv_bin_size;
 
 inline char16_t gbkToUnicode(std::uint16_t gbk) {
     std::uint16_t hi = static_cast<std::uint8_t>(gbk >> 8);
     std::uint16_t lo = static_cast<std::uint8_t>(gbk & 0xFF);
+
+    auto gbk_bin = CMakeResource("data/gbk.bin").data();
 
     if (0x81 <= hi && hi <= 0xFE && 0x40 <= lo && lo <= 0xFE) {
         auto base = reinterpret_cast<const char16_t *>(gbk_bin);
@@ -26,6 +24,8 @@ inline char16_t gbkToUnicode(std::uint16_t gbk) {
 }
 
 inline std::uint16_t unicodeToGbk(char16_t code) {
+    auto gbk_inv_bin = CMakeResource("data/gbk-inv.bin").data();
+
     auto base = reinterpret_cast<const char16_t *>(gbk_inv_bin);
     auto index = static_cast<std::uint16_t>(code);
     return base[index];

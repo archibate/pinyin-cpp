@@ -4,7 +4,7 @@
 #include <pinyincpp/pinyin_words.hpp>
 #include <pinyincpp/pinyin_input.hpp>
 #include <pinyincpp/pinyin_englify.hpp>
-#include <ctype.hpp>
+#include <pinyincpp/ctype.hpp>
 #include <fstream>
 #include <string>
 
@@ -91,9 +91,9 @@ struct PinyinServer {
                     englishTendency += 1;
                 }
                 int pinyinCount = 0, specialCount = 0;
-                bool seemsPinyin = false;
-                auto foundSep = restUtf32.find(U'0');
-                if (foundSep == 0 || (!restUtf32.empty() && foundSep == restUtf32.size() - 1)) {
+                bool seemsPinyin = true;
+                /* auto foundSep = restUtf32.find(U'0'); */
+                /* if (foundSep == 0 || (!restUtf32.empty() && foundSep == restUtf32.size() - 1)) { */
                     for (auto const &pid: pids) {
                         if (isSpecialPid(pid)) {
                             char32_t c = extractSpecialPid(pid);
@@ -141,7 +141,7 @@ struct PinyinServer {
                     }
                     /* printf("%d, %d\n", specialCount, pinyinCount); */
                     seemsPinyin = pinyinCount != 0 && specialCount * (5 + englishTendency) < pinyinCount + 13;
-                }
+                /* } */
                 if (seemsPinyin) {
                     result.fixedPrefix = past;
                     result.fixedEatBytes = inpos;

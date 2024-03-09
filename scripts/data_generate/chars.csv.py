@@ -20,7 +20,7 @@ with open('build/pinyin.txt', encoding='utf-8') as f:
         unicode, pinyin = line.split(':')
         char = int(unicode[2:], base=16)
         pinyin = pinyin.split('#')[0].strip().split(',')
-        tabPin[char] = ' '.join(map(untone_pinyin, pinyin))
+        tabPin[char] = '/'.join(map(untone_pinyin, pinyin))
 
 for char, count in tabFreq.items():
     if char not in tab:

@@ -1,4 +1,6 @@
 #include <pinyincpp/pinyin_englify.hpp>
+#include <pinyincpp/pinyin_words.hpp>
+#include <pinyincpp/pinyin_input.hpp>
 #include <fstream>
 #include <iomanip>
 #include <iostream>

@@ -10,9 +10,6 @@
 
 namespace pinyincpp {
 
-extern const char words_csv[];
-extern const unsigned long long words_csv_size;
-
 struct PinyinWordsDB {
     struct WordData {
         std::u32string word;
@@ -24,7 +21,7 @@ struct PinyinWordsDB {
     TrieMultimap<Pid, std::size_t> triePinyinToWord;
 
     explicit PinyinWordsDB(PinyinDB &db) {
-        std::istringstream wordsCsvIn(std::string(words_csv, words_csv_size));
+        std::istringstream wordsCsvIn = CMakeResource("data/words.csv").open();
         std::string line, tmp;
         std::vector<Pid> pinyin;
         std::vector<std::size_t> words;
@@ -37,10 +34,8 @@ struct PinyinWordsDB {
                 Pid pid = db.pinyinId(tmp);
                 pinyin.push_back(pid);
             }
-            std::getline(lineIn, tmp, '\t');
-            std::istringstream wordsIn(std::move(tmp));
             words.clear();
-            while (std::getline(wordsIn, tmp, ' ')) {
+            while (std::getline(lineIn, tmp, ' ')) {
                 auto word = utfCto32(tmp);
                 double score = 1;
                 std::size_t num = 0;

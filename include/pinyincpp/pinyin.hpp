@@ -13,9 +13,6 @@
 
 namespace pinyincpp {
 
-extern const char chars_csv[];
-extern const unsigned long long chars_csv_size;
-
 using Pid = std::int32_t;
 
 inline bool isSpecialPid(Pid pid) {
@@ -66,7 +63,7 @@ private:
 public:
     PinyinDB() {
         {
-            std::istringstream charsCsvIn(std::string(chars_csv, chars_csv_size));
+            std::istringstream charsCsvIn = CMakeResource("data/chars.csv").open();
             std::string line;
             while (std::getline(charsCsvIn, line)) {
                 std::string tmp;
