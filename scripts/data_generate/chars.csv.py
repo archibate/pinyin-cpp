@@ -1,4 +1,5 @@
 from pinyintools import untone_pinyin
+import math
 
 tabPin = {}
 tabFreq = {}

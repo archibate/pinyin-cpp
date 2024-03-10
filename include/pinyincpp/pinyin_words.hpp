@@ -4,6 +4,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <pinyincpp/resources.hpp>
 #include <pinyincpp/utf8.hpp>
 #include <pinyincpp/pinyin.hpp>
 #include <pinyincpp/trie.hpp>
@@ -12,7 +13,7 @@ namespace pinyincpp {
 
 struct PinyinWordsDB {
     struct WordData {
-        std::u32string word;
+        std::u16string word;
         double score;
         std::vector<Pid> pinyin;
     };
@@ -21,35 +22,35 @@ struct PinyinWordsDB {
     TrieMultimap<Pid, std::size_t> triePinyinToWord;
 
     explicit PinyinWordsDB(PinyinDB &db) {
-        std::istringstream wordsCsvIn = CMakeResource("data/words.csv").open();
-        std::string line, tmp;
-        std::vector<Pid> pinyin;
-        std::vector<std::size_t> words;
-        while (std::getline(wordsCsvIn, line)) {
-            std::istringstream lineIn(std::move(line));
-            std::getline(lineIn, tmp, '\t');
-            std::istringstream pinyinIn(std::move(tmp));
-            pinyin.clear();
-            while (std::getline(pinyinIn, tmp, ' ')) {
-                Pid pid = db.pinyinId(tmp);
-                pinyin.push_back(pid);
-            }
-            words.clear();
-            while (std::getline(lineIn, tmp, ' ')) {
-                auto word = utfCto32(tmp);
-                double score = 1;
-                std::size_t num = 0;
-                for (char32_t c: word) {
-                    auto logProb = db.charLogFrequency(c);
-                    num += logProb > 0 ? 1 : 0;
-                    score += logProb;
-                }
-                score /= std::max(1.0, (double)num);
-                words.push_back(wordData.size());
-                wordData.push_back({word, score, pinyin});
-            }
-            triePinyinToWord.batchedInsert(pinyin, std::move(words));
-        }
+        BytesReader f = CMakeResource("data/pinyin-words.bin").view();
+        /* std::string line, tmp; */
+        /* std::vector<Pid> pinyin; */
+        /* std::vector<std::size_t> words; */
+        /* while (std::getline(wordsCsvIn, line)) { */
+        /*     std::istringstream lineIn(std::move(line)); */
+        /*     std::getline(lineIn, tmp, '\t'); */
+        /*     std::istringstream pinyinIn(std::move(tmp)); */
+        /*     pinyin.clear(); */
+        /*     while (std::getline(pinyinIn, tmp, ' ')) { */
+        /*         Pid pid = db.pinyinId(tmp); */
+        /*         pinyin.push_back(pid); */
+        /*     } */
+        /*     words.clear(); */
+        /*     while (std::getline(lineIn, tmp, ' ')) { */
+        /*         auto word = utfCto32(tmp); */
+        /*         double score = 1; */
+        /*         std::size_t num = 0; */
+        /*         for (char32_t c: word) { */
+        /*             auto logProb = db.charLogFrequency(c); */
+        /*             num += logProb > 0 ? 1 : 0; */
+        /*             score += logProb; */
+        /*         } */
+        /*         score /= std::max(1.0, (double)num); */
+        /*         words.push_back(wordData.size()); */
+        /*         wordData.push_back({word, score, pinyin}); */
+        /*     } */
+        /*     triePinyinToWord.batchedInsert(pinyin, std::move(words)); */
+        /* } */
     }
 
     void addCustomWords(PinyinDB &db, std::vector<std::pair<std::string, std::string>> const &pinyinAndWords, double effectivity = 0.0) {
@@ -67,7 +68,7 @@ struct PinyinWordsDB {
             score /= std::max(1.0, (double)num);
             auto pinyin = db.pinyinSplit(utfCto32(pinyinStr), U' ');
             wordsToAdd.push_back(wordData.size());
-            wordData.push_back({wordUtf32, score * effectivity, pinyin});
+            wordData.push_back({utf32to16(wordUtf32), score * effectivity, pinyin});
             triePinyinToWord.batchedInsert(pinyin, std::move(wordsToAdd));
         }
     }

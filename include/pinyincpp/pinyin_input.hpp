@@ -171,13 +171,13 @@ public:
         if (!pids.empty()) {
             wd.triePinyinToWord.visitPrefix(pids, [&] (std::vector<Pid> const &fullPids, std::size_t const &wordIndex) {
                 auto const &w = wd.wordData[wordIndex];
-                candidates.push_back({w.score * pids.size() / (fullPids.size() + 1), w.word, fullPids});
+                candidates.push_back({w.score * pids.size() / (fullPids.size() + 1), utf16to32(w.word), fullPids});
                 return false;
             }, depthLimit);
         } else {
             wd.triePinyinToWord.visitItems([&] (std::vector<Pid> const &fullPids, std::size_t const &wordIndex) {
                 auto const &w = wd.wordData[wordIndex];
-                candidates.push_back({w.score * pids.size() / (fullPids.size() + 1), w.word, fullPids});
+                candidates.push_back({w.score * pids.size() / (fullPids.size() + 1), utf16to32(w.word), fullPids});
                 return false;
             }, depthLimit);
         }

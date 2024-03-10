@@ -8,7 +8,10 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <pinyincpp/resources.hpp>
+#include <pinyincpp/debug.hpp>
 #include <pinyincpp/utf8.hpp>
+#include <pinyincpp/bytes_reader.hpp>
 #include <pinyincpp/resources.hpp>
 
 namespace pinyincpp {
@@ -30,6 +33,7 @@ inline Pid makeSpecialPid(char32_t c) {
 struct PidTone {
     Pid pid;
     std::uint8_t tone;
+    auto tuplify() const { return std::tie(pid, tone); }
 };
 
 using PidSet = std::vector<Pid>;
@@ -39,16 +43,19 @@ struct PinyinDB {
     struct CharInfo {
         char32_t character;
         double logFrequency;
+        auto tuplify() const { return std::tie(character, logFrequency); }
     };
 
     struct PinyinInfo {
         double logFrequency;
         PidSet pinyin;
+        auto tuplify() const { return std::tie(logFrequency, pinyin); }
     };
 
 private:
     struct CharData : CharInfo {
         PidToneSet pinyin;
+        auto tuplify() const { return std::tuple_cat(CharInfo::tuplify(), std::tie(pinyin)); }
     };
 
     std::vector<CharData> charData;
@@ -63,39 +70,72 @@ private:
 public:
     PinyinDB() {
         {
-            std::istringstream charsCsvIn = CMakeResource("data/chars.csv").open();
-            std::string line;
-            while (std::getline(charsCsvIn, line)) {
-                std::string tmp;
-                std::istringstream lineIn(line);
-                std::getline(lineIn, tmp, ',');
-                char32_t character = std::stoul(tmp);
-                std::getline(lineIn, tmp, ',');
-                std::uint32_t frequency = std::stoul(tmp);
-                PidToneSet pinyinToned;
-                std::unordered_set<Pid> addedPinyin;
-                while (std::getline(lineIn, tmp, '/')) {
-                    std::uint8_t tone = 0;
-                    if ('0' <= tmp.back() && tmp.back() <= '9') {
-                        tone = tmp.back() - '0';
-                        tmp.pop_back();
-                    }
-                    auto [it, success] = lookupPinyinToPid.try_emplace(tmp, pinyinData.size());
-                    Pid pid = it->second;
-                    if (addedPinyin.insert(pid).second) {
-                        pinyinToned.push_back({pid, tone});
-                    }
-                    if (success) {
-                        pinyinData.push_back(tmp);
-                    }
-                }
-                auto logFrequency = std::log(frequency + 2);
-                charData.push_back({character, logFrequency, std::move(pinyinToned)});
+            BytesReader f = CMakeResource("data/pinyin.bin").view();
+            auto nPids = f.read32();
+            pinyinData.reserve(nPids);
+            for (Pid pid = 0; pid < nPids; pid++) {
+                auto pinyin = f.reads(6);
+                pinyin.resize(std::strlen(pinyin.c_str()));
+                lookupPinyinToPid.emplace(pinyin, pid);
+                pinyinData.push_back(std::move(pinyin));
             }
+            auto nChars = f.read32();
+            /* debug(), nChars; */
+            charData.reserve(nChars);
+            for (std::size_t i = 0; i < nChars; ++i) {
+                char32_t c = f.read24();
+                double logProb = (double)f.read16() / 4096;
+                auto nPidTones = f.read8();
+                PidToneSet pidToneSet;
+                pidToneSet.reserve(nPidTones);
+                for (std::size_t j = 0; j < nPidTones; ++j) {
+                    std::uint16_t pidTone = f.read16();
+                    Pid pid = pidTone >> 3;
+                    std::uint8_t tone = pidTone & 7;
+                    pidToneSet.push_back({pid, tone});
+                }
+                /* debug(), c, logProb, nPidTones, pidToneSet; */
+                charData.push_back({
+                    c, logProb,
+                    std::move(pidToneSet),
+                });
+                /* exit(1); */
+            }
+            /* std::string line; */
+            /* while (std::getline(charsCsvIn, line)) { */
+            /*     std::string tmp; */
+            /*     std::istringstream lineIn(line); */
+            /*     std::getline(lineIn, tmp, ','); */
+            /*     char32_t character = std::stoul(tmp); */
+            /*     std::getline(lineIn, tmp, ','); */
+            /*     std::uint32_t frequency = std::stoul(tmp); */
+            /*     PidToneSet pinyinToned; */
+            /*     std::unordered_set<Pid> addedPinyin; */
+            /*     while (std::getline(lineIn, tmp, '/')) { */
+            /*         std::uint8_t tone = 0; */
+            /*         if ('0' <= tmp.back() && tmp.back() <= '9') { */
+            /*             tone = tmp.back() - '0'; */
+            /*             tmp.pop_back(); */
+            /*         } */
+            /*         auto [it, success] = lookupPinyinToPid.try_emplace(tmp, pinyinData.size()); */
+            /*         Pid pid = it->second; */
+            /*         if (addedPinyin.insert(pid).second) { */
+            /*             pinyinToned.push_back({pid, tone}); */
+            /*         } */
+            /*         if (success) { */
+            /*             pinyinData.push_back(tmp); */
+            /*         } */
+            /*     } */
+            /*     auto logFrequency = std::log(frequency + 2); */
+            /*     charData.push_back({character, logFrequency, std::move(pinyinToned)}); */
+            /* } */
         }
         for (const auto &c : charData) {
+            std::unordered_set<Pid> addedPinyin;
             for (auto const &p : c.pinyin) {
-                lookupPinyinToChar[p.pid].push_back(static_cast<CharInfo const &>(c));
+                if (addedPinyin.insert(p.pid).second) {
+                    lookupPinyinToChar[p.pid].push_back(static_cast<CharInfo const &>(c));
+                }
             }
         }
         for (const auto &c : charData) {

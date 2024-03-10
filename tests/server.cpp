@@ -15,7 +15,7 @@ int main() {
         ps.onDefineWords(std::string(std::istreambuf_iterator<char>{fin}, std::istreambuf_iterator<char>{}), 1.0);
     }
     std::cout << ps.db.pinyinConcat(ps.db.pinyinSplit(U"laoshi")) << '\n';
-    auto res = ps.onInput("我是可爱的小彭", "laoshifu", 100);
+    auto res = ps.onInput("我是可爱的小彭", "lao", 100);
     std::cout << '[' << res.fixedPrefix << ']' << res.fixedEatBytes << '\n';
     for (auto c: res.candidates) {
         std::cout << '[' << c.text << '|' << c.enggy << ']' << c.eatBytes << ' ' << c.score << '\n';
