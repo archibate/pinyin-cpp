@@ -14,18 +14,21 @@ namespace pinyincpp {
 struct BytesReader {
     const unsigned char *begin, *end;
 
-    BytesReader(std::string_view view) : begin((const unsigned char *)view.data()), end((const unsigned char *)view.data() + view.size()) {
-    }
+    BytesReader(const unsigned char *begin, const unsigned char *end)
+    : begin(begin), end(end) {}
+
+    BytesReader(std::string_view view)
+    : BytesReader((const unsigned char *)view.data(), (const unsigned char *)view.data() + view.size()) {}
 
     template <class T, std::endian endian = std::endian::little>
     T read() {
         static_assert(std::is_arithmetic_v<T>);
         debug().check(end - begin) >= sizeof(T);
         T result;
-        unsigned char *buffer = reinterpret_cast<unsigned char *>(std::addressof(result));
-        std::memcpy(buffer, begin, sizeof(T));
+        unsigned char *p = reinterpret_cast<unsigned char *>(std::addressof(result));
+        std::memcpy(p, begin, sizeof(T));
         if constexpr (endian != std::endian::native && sizeof(T) > 1) {
-            std::reverse(buffer, buffer + sizeof(T));
+            std::reverse(p, p + sizeof(T));
         }
         begin += sizeof(T);
         return result;
@@ -65,11 +68,27 @@ struct BytesReader {
         return *begin++;
     }
 
-    std::string reads(std::size_t n) {
-        debug().check(end - begin) >= n;
-        std::string result((const char *)begin, n);
-        begin += n;
-        return result;
+    template <class S = std::string, std::endian endian = std::endian::little>
+    S reads(std::size_t n) {
+        using T = typename S::value_type;
+        debug().check(end - begin) >= n * sizeof(T);
+        if constexpr (sizeof(T) == 1) {
+            S result{reinterpret_cast<const char *>(begin), n};
+            begin += n;
+            return result;
+        } else {
+            S result;
+            result.resize(n);
+            std::memcpy(result.data(), begin, n * sizeof(T));
+            if constexpr (endian != std::endian::native) {
+                for (auto &c: result) {
+                    auto p = reinterpret_cast<unsigned char *>(std::addressof(c));
+                    std::reverse(p, p + sizeof(T));
+                }
+            }
+            begin += n * sizeof(T);
+            return result;
+        }
     }
 };
 

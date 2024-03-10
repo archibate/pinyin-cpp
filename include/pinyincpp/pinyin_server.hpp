@@ -12,13 +12,14 @@ namespace pinyincpp {
 
 struct PinyinServer {
     PinyinDB db;
-    PinyinWordsDB wd{db};
+    PinyinWordsDB wd;
     PinyinEnglifyDB ed{db};
     PinyinInput im;
 
     void onLoadSample(std::string const &in, double factor = 1.0) {
         // todo: remove english chunks in it...
         im.addSampleString(in, factor);
+        // todo: find small chunks to add as word...
     }
 
     void onDefineWords(std::string const &in, double factor = 1.0) {

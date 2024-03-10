@@ -10,7 +10,7 @@ using namespace pinyincpp;
 
 int main() {
     PinyinDB db;
-    PinyinWordsDB wd(db);
+    PinyinWordsDB wd;
     PinyinEnglifyDB ed(db);
     PinyinInput im;
     {

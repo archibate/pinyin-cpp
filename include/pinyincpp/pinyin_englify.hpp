@@ -19,12 +19,6 @@ private:
     };
 
 public:
-    struct WordData {
-        std::u32string word;
-        double score;
-        std::vector<Pid> pinyin;
-    };
-
     std::unordered_map<std::string, char32_t> lookupEnggyToChar;
     std::unordered_map<std::pair<char32_t, Pid>, std::string, PairHash> lookupCharPidToEnggy;
     std::unordered_map<char32_t, std::string> lookupCharToEnggy;

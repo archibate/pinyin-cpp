@@ -105,9 +105,14 @@ with open('data/pinyin-words.bin', 'wb') as f:
                 pinyin = pinyin[:-1]
             pid = tabPids[pinyin] * 8 + tone
             data += pid.to_bytes(2, 'little')
+        assert len(words)
         for word in words:
-            word16 = word.encode('utf-16')
+            word16 = word.encode('utf-16')[2:]
+            assert len(word16)
+            logProb = 1 # todo
+            logProbQuant = int(logProb * 4096)
             data += (len(word16) // 2).to_bytes(1, 'little')
+            data += logProbQuant.to_bytes(2, 'little')
             data += word16
         data += b'\x00'
         f.write(data)

@@ -13,6 +13,7 @@
 #include <pinyincpp/utf8.hpp>
 #include <pinyincpp/bytes_reader.hpp>
 #include <pinyincpp/resources.hpp>
+#include <pinyincpp/inline_vector.hpp>
 
 namespace pinyincpp {
 
@@ -31,23 +32,23 @@ inline Pid makeSpecialPid(char32_t c) {
 }
 
 struct PidTone {
-    Pid pid;
-    std::uint8_t tone;
+    Pid pid: 13;
+    std::uint8_t tone: 3;
     auto tuplify() const { return std::tie(pid, tone); }
 };
 
-using PidSet = std::vector<Pid>;
-using PidToneSet = std::vector<PidTone>;
+using PidSet = InlineVector<Pid, 4>;
+using PidToneSet = InlineVector<PidTone, 4>;
 
 struct PinyinDB {
     struct CharInfo {
         char32_t character;
-        double logFrequency;
+        float logFrequency;
         auto tuplify() const { return std::tie(character, logFrequency); }
     };
 
     struct PinyinInfo {
-        double logFrequency;
+        float logFrequency;
         PidSet pinyin;
         auto tuplify() const { return std::tie(logFrequency, pinyin); }
     };
@@ -65,8 +66,6 @@ private:
     std::unordered_map<Pid, std::vector<CharInfo>> lookupPinyinToChar;
     std::unordered_map<char32_t, PinyinInfo> lookupCharToPinyin;
 
-    friend struct PinyinEnglify;
-
 public:
     PinyinDB() {
         {
@@ -80,7 +79,6 @@ public:
                 pinyinData.push_back(std::move(pinyin));
             }
             auto nChars = f.read32();
-            /* debug(), nChars; */
             charData.reserve(nChars);
             for (std::size_t i = 0; i < nChars; ++i) {
                 char32_t c = f.read24();
@@ -94,41 +92,11 @@ public:
                     std::uint8_t tone = pidTone & 7;
                     pidToneSet.push_back({pid, tone});
                 }
-                /* debug(), c, logProb, nPidTones, pidToneSet; */
                 charData.push_back({
-                    c, logProb,
+                    c, static_cast<float>(logProb),
                     std::move(pidToneSet),
                 });
-                /* exit(1); */
             }
-            /* std::string line; */
-            /* while (std::getline(charsCsvIn, line)) { */
-            /*     std::string tmp; */
-            /*     std::istringstream lineIn(line); */
-            /*     std::getline(lineIn, tmp, ','); */
-            /*     char32_t character = std::stoul(tmp); */
-            /*     std::getline(lineIn, tmp, ','); */
-            /*     std::uint32_t frequency = std::stoul(tmp); */
-            /*     PidToneSet pinyinToned; */
-            /*     std::unordered_set<Pid> addedPinyin; */
-            /*     while (std::getline(lineIn, tmp, '/')) { */
-            /*         std::uint8_t tone = 0; */
-            /*         if ('0' <= tmp.back() && tmp.back() <= '9') { */
-            /*             tone = tmp.back() - '0'; */
-            /*             tmp.pop_back(); */
-            /*         } */
-            /*         auto [it, success] = lookupPinyinToPid.try_emplace(tmp, pinyinData.size()); */
-            /*         Pid pid = it->second; */
-            /*         if (addedPinyin.insert(pid).second) { */
-            /*             pinyinToned.push_back({pid, tone}); */
-            /*         } */
-            /*         if (success) { */
-            /*             pinyinData.push_back(tmp); */
-            /*         } */
-            /*     } */
-            /*     auto logFrequency = std::log(frequency + 2); */
-            /*     charData.push_back({character, logFrequency, std::move(pinyinToned)}); */
-            /* } */
         }
         for (const auto &c : charData) {
             std::unordered_set<Pid> addedPinyin;

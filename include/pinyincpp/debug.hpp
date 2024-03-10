@@ -62,7 +62,7 @@ private:
     template <class T0>
     static void uni_format(std::ostream &oss, T0 &&t) {
         using T = std::decay_t<T0>;
-        if constexpr (std::is_convertible_v<T, std::string_view>) {
+        if constexpr (std::is_convertible_v<T, std::string_view> && !std::is_same_v<T, const char *>) {
             uni_quotes(oss, t, '"');
         } else if constexpr (std::is_same_v<T, char> || std::is_same_v<T, signed char>) {
             uni_quotes(oss, {reinterpret_cast<const char *>(&t), 1}, '\'');
@@ -171,8 +171,7 @@ private:
         template <class U>
         debug &check(bool cond, U const &u, const char *sym) {
             if (!cond) [[unlikely]] {
-                d.on_error();
-                d << "assertion failed:" << t << sym << u;
+                d.on_error("assertion failed:") << t << sym << u;
             }
             return d;
         }
@@ -188,11 +187,14 @@ private:
         template <class U> debug &operator!=(U const &u) { return check(t != u, u, "!="); }
     };
 
-    debug &on_error() {
+    debug &on_error(const char *msg) {
         if (state != supress) {
             state = panic;
             add_location_marks();
+        } else {
+            oss << ' ';
         }
+        oss << msg;
         return *this;
     }
 
@@ -203,7 +205,7 @@ private:
             state = print;
             add_location_marks();
         } else {
-            oss << ", ";
+            oss << ' ';
         }
         uni_format(oss, std::forward<T>(t));
         return *this;
@@ -226,9 +228,9 @@ public:
         return debug_condition<T>{*this, t};
     }
 
-    debug &error_if(bool fail) {
+    debug &fail(bool fail = true) {
         if (fail) [[unlikely]] {
-            on_error();
+            on_error("error:");
         } else {
             state = supress;
         }

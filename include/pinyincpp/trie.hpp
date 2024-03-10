@@ -1,7 +1,7 @@
 #pragma once
 
-#include <map>
 #include <vector>
+#include <pinyincpp/small_map.hpp>
 
 namespace pinyincpp {
 
@@ -9,14 +9,15 @@ template <class K, class V, class Ks = std::vector<K>, class Vs = std::vector<V>
 struct TrieMultimap {
 private:
     struct Node {
-        std::map<K, Node> children;
+        SmallMap<K, Node> children;
         Vs values;
     };
 
     Node root;
 
 public:
-    void insert(Ks const &keys, V value) {
+    template <class Kss>
+    void insert(Kss const &keys, V value) {
         Node *current = &root;
         for (K const &key : keys) {
             auto result = current->children.emplace(std::piecewise_construct, std::make_tuple(key), std::make_tuple());
@@ -25,23 +26,21 @@ public:
         current->values.push_back(std::move(value));
     }
 
-    void batchedInsert(Ks const &keys, Vs values) {
+    template <class Kss, class Vit>
+    void batchedInsert(Kss const &keys, Vit first, Vit last) {
         Node *current = &root;
         for (K const &key : keys) {
             auto result = current->children.emplace(std::piecewise_construct, std::make_tuple(key), std::make_tuple());
             current = &result.first->second;
         }
-        if (current->values.empty()) {
-            current->values = std::move(values);
-        } else {
-            current->values.insert(current->values.end(), values.begin(), values.end());
-        }
+        current->values.insert(current->values.end(), first, last);
     }
 
-    bool erase(Ks const &keys) {
+    template <class Kss>
+    bool erase(Kss const &keys) {
         Node *current = &root;
         Node *parent = nullptr;
-        typename std::unordered_map<K, Node>::iterator it;
+        decltype(current->children.find(keys[0])) it;
         for (std::size_t i = 0; i < keys.size(); ++i) {
             K const &key = keys[i];
             it = current->children.find(key);
@@ -58,7 +57,8 @@ public:
         return true;
     }
 
-    Vs find(Ks const &keys) const {
+    template <class Kss>
+    Vs find(Kss const &keys) const {
         Node const *current = &root;
         for (K const &key : keys) {
             auto it = current->children.find(key);
@@ -73,8 +73,8 @@ public:
         return current->values;
     }
 
-    template <class Visit>
-    bool visitPrefix(Ks const &keys, Visit &&visit, std::size_t depthLimit = (std::size_t)-1) const {
+    template <class Kss, class Visit>
+    bool visitPrefix(Kss const &keys, Visit &&visit, std::size_t depthLimit = (std::size_t)-1) const {
         Node const *current = &root;
         for (K const &key : keys) {
             auto it = current->children.find(key);
@@ -86,9 +86,9 @@ public:
         return visitItems(*current, keys, visit, depthLimit);
     }
 
-    template <class Visit>
+    template <class Kss = Ks, class Visit>
     bool visitItems(Visit &&visit, std::size_t depthLimit = (std::size_t)-1) const {
-        return visitItems(root, Ks(), visit, depthLimit);
+        return visitItems(root, Kss(), visit, depthLimit);
     }
 
     std::vector<std::pair<Ks, V>> getItems() const {
@@ -101,8 +101,8 @@ public:
     }
 
 private:
-    template <class Visit>
-    static bool visitItems(Node const &node, Ks const &keys, Visit &&visit, std::size_t depthLimit = (std::size_t)-1) {
+    template <class Kss, class Visit>
+    static bool visitItems(Node const &node, Kss const &keys, Visit &&visit, std::size_t depthLimit = (std::size_t)-1) {
         if (depthLimit == 0) {
             return false;
         }
@@ -115,7 +115,7 @@ private:
             return false;
         }
         for (auto const &child : node.children) {
-            Ks newKeys = keys;
+            Kss newKeys = keys;
             newKeys.push_back(child.first);
             if (visitItems(child.second, newKeys, visit, depthLimit - 1)) {
                 return true;

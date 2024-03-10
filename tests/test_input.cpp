@@ -8,7 +8,7 @@ using namespace pinyincpp;
 
 int main() {
     PinyinDB db;
-    PinyinWordsDB wd(db);
+    PinyinWordsDB wd;
     PinyinInput im;
     {
         std::ifstream fin("/tmp/extract.txt");
