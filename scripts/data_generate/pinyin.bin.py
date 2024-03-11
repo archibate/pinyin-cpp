@@ -50,6 +50,9 @@ with open('build/large_pinyin.txt', 'r', encoding='utf-8') as f:
         pinyin = tuple(untone_pinyin(p) for p in pinyin.split())
         tabWord[pinyin] = tabWord.get(pinyin, set()).union(set([word]))
 
+tab[ord('𠈌')] = [0, ['yu2']]
+tab[ord('𫶕')] = [0, ['ying2', 'hong1']]
+
 tabPinyin = []
 tabPids: dict[str, int] = {}
 
@@ -68,6 +71,40 @@ for char, line in tab.items():
 print(len(tabPinyin))
 print(len(tab))
 print(len(tabWord))
+
+with open('data/pinyin-words.bin', 'wb') as f:
+    f.write(len(tabWord).to_bytes(4, 'little'))
+    for pinyins, words in tabWord.items():
+        data = len(pinyins).to_bytes(1, 'little')
+        for pinyin in pinyins:
+            tone = 0
+            if pinyin[-1].isdigit():
+                tone = int(pinyin[-1])
+                pinyin = pinyin[:-1]
+            pid = tabPids[pinyin] * 8 + tone
+            data += pid.to_bytes(2, 'little')
+        assert len(words)
+        for word in words:
+            word16 = word.encode('utf-16')[2:]
+            assert len(word16)
+            logProb = 1
+            for w in word:
+                w = ord(w)
+                if w not in tab:
+                    print(chr(w))
+                    count = 0
+                else:
+                    count = tab[w][0]
+                logProb += math.log(count + 1.1)
+            logProb /= len(word)
+            logProbQuant = int(logProb * 2048)
+            if logProbQuant >= 65536:
+                print(logProb)
+            data += (len(word16) // 2).to_bytes(1, 'little')
+            data += logProbQuant.to_bytes(2, 'little')
+            data += word16
+        data += b'\x00'
+        f.write(data)
 
 with open('data/pinyin.bin', 'wb') as f:
     f.write(len(tabPinyin).to_bytes(4, 'little'))
@@ -92,27 +129,4 @@ with open('data/pinyin.bin', 'wb') as f:
                 pinyin = pinyin[:-1]
             pid = tabPids[pinyin] * 8 + tone
             data += pid.to_bytes(2, 'little')
-        f.write(data)
-
-with open('data/pinyin-words.bin', 'wb') as f:
-    f.write(len(tabWord).to_bytes(4, 'little'))
-    for pinyins, words in tabWord.items():
-        data = len(pinyins).to_bytes(1, 'little')
-        for pinyin in pinyins:
-            tone = 0
-            if pinyin[-1].isdigit():
-                tone = int(pinyin[-1])
-                pinyin = pinyin[:-1]
-            pid = tabPids[pinyin] * 8 + tone
-            data += pid.to_bytes(2, 'little')
-        assert len(words)
-        for word in words:
-            word16 = word.encode('utf-16')[2:]
-            assert len(word16)
-            logProb = 1 # todo
-            logProbQuant = int(logProb * 4096)
-            data += (len(word16) // 2).to_bytes(1, 'little')
-            data += logProbQuant.to_bytes(2, 'little')
-            data += word16
-        data += b'\x00'
         f.write(data)

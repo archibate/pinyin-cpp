@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <initializer_list>
-#include <concepts>
 #include <iterator>
 #include <algorithm>
 #include <cstring>
@@ -12,326 +11,195 @@
 
 namespace pinyincpp {
 
-#if 0
-template <class K, class V>
+#if 1
+template <class K, class V, class Cmp = std::less<K>, class BaseVector = std::vector<std::pair<K, V>>>
 struct SmallMap {
-    using value_type = T;
+    using key_type = K;
+    using mapped_type = V;
+    using key_compare = Cmp;
+    using base_vector_type = BaseVector;
+    using value_type = std::pair<K, V>;
     using size_type = std::size_t;
     using difference_type = std::ptrdiff_t;
     using reference = value_type&;
     using const_reference = const value_type&;
     using pointer = value_type*;
     using const_pointer = const value_type*;
-    using iterator = pointer;
-    using const_iterator = const_pointer;
+    using iterator = typename base_vector_type::iterator;
+    using const_iterator = typename base_vector_type::const_iterator;
 
-    struct Store {
-        union {
-            T m_data[N];
+private:
+    BaseVector m_store;
+
+    auto value_key_comp() const {
+        return [this](const value_type& lhs, const key_type& rhs) {
+            return Cmp{}(lhs.first, rhs);
         };
-        std::size_t m_size = 0;
-
-        Store() noexcept {}
-    };
-
-    std::variant<Store, std::vector<T>> m_variant;
-
-    InlineVector() noexcept {
-        auto &store = m_variant.template emplace<0>();
-        store.m_size = 0;
     }
 
-    InlineVector(std::initializer_list<T> l) {
-        if (l.size() <= N) {
-            auto &store = m_variant.template emplace<0>();
-            store.m_size = 0;
-            for (auto const& x : l) {
-                new (store.m_data + store.m_size) T(x);
-                ++store.m_size;
-            }
+public:
+    SmallMap() noexcept {}
+
+    template <class ...Args>
+    std::pair<iterator, bool> try_emplace(K const &key, Args &&...args) {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), key, value_key_comp());
+        if (it != m_store.end() && it->first == key) {
+            return {it, false};
         } else {
-            m_variant.template emplace<1>(l);
+            return {m_store.emplace(it, key, V(std::forward<Args>(args)...)), true};
         }
     }
 
-    template <std::input_iterator It, std::sentinel_for<It> Ite>
-    explicit InlineVector(It first, Ite last) {
-        if (std::distance(first, last) <= N) {
-            auto &store = m_variant.template emplace<0>();
-            store.m_size = 0;
-            for (; first != last; ++first) {
-                new (store.m_data + store.m_size) T(*first);
-                ++store.m_size;
-            }
+    std::pair<iterator, bool> insert(const value_type &value) {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), value.first, value_key_comp());
+        if (it != m_store.end() && it->first == value.first) {
+            return {it, false};
         } else {
-            m_variant.template emplace<1>(first, last);
+            return {m_store.insert(it, value), true};
         }
     }
 
-    InlineVector(InlineVector const &that) {
-        std::visit([&that, this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                auto& this_store = m_variant.template emplace<0>();
-                this_store.m_size = that.size();
-                for (std::size_t i = 0; i < this_store.m_size; ++i) {
-                    new (this_store.m_data + i) T(arg.m_data[i]);
-                }
-            } else {
-                m_variant.template emplace<1>(arg);
-            }
-        }, that.m_variant);
+    std::pair<iterator, bool> insert(value_type &&value) {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), value.first, value_key_comp());
+        if (it != m_store.end() && it->first == value.first) {
+            return {it, false};
+        } else {
+            return {m_store.insert(it, std::move(value)), true};
+        }
     }
 
-    InlineVector(InlineVector &&that) noexcept {
-        std::visit([&that, this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                auto &this_store = m_variant.template emplace<0>();
-                this_store.m_size = that.size();
-                for (std::size_t i = 0; i < this_store.m_size; ++i) {
-                    new (this_store.m_data + i) T(std::move(arg.m_data[i]));
-                }
-            } else {
-                m_variant.template emplace<1>(std::move(arg));
-            }
-        }, std::move(that.m_variant));
+    template <class InputIt>
+    void insert(InputIt first, InputIt last) {
+        for (auto it = first; it != last; ++it) {
+            insert(*it);
+        }
     }
 
-    InlineVector &operator=(InlineVector const &that) {
-        this->~InlineVector();
-        new (this) InlineVector(that);
-        return *this;
+    void insert(std::initializer_list<value_type> ilist) {
+        insert(ilist.begin(), ilist.end());
     }
 
-    InlineVector &operator=(InlineVector &&that) noexcept {
-        this->~InlineVector();
-        new (this) InlineVector(std::move(that));
-        return *this;
+    iterator find(const key_type &key) {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), key, value_key_comp());
+        if (it != m_store.end() && it->first == key) {
+            return it;
+        } else {
+            return end();
+        }
     }
 
-    void push_back(const T& x) {
-        std::visit([&x, this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                if (arg.m_size + 1 >= N) {
-                    std::vector<T> v;
-                    v.reserve(arg.m_size + 1);
-                    v.assign(arg.m_data, arg.m_data + arg.m_size);
-                    for (std::size_t i = 0; i < N; ++i) {
-                        arg.m_data[i].~T();
-                    }
-                    v.push_back(x);
-                    m_variant.template emplace<1>(std::move(v));
-                } else {
-                    new (arg.m_data + arg.m_size) T(x);
-                    ++arg.m_size;
-                }
-            } else {
-                arg.push_back(x);
-            }
-        }, m_variant);
+    const_iterator find(const key_type &key) const {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), key, value_key_comp());
+        if (it != m_store.end() && it->first == key) {
+            return it;
+        } else {
+            return cend();
+        }
     }
 
-    void push_back(T&& x) {
-        std::visit([&x, this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                if (arg.m_size + 1 >= N) {
-                    std::vector<T> v;
-                    v.reserve(arg.m_size + 1);
-                    v.assign(std::make_move_iterator(arg.m_data), std::make_move_iterator(arg.m_data + arg.m_size));
-                    for (std::size_t i = 0; i < N; ++i) {
-                        arg.m_data[i].~T();
-                    }
-                    v.push_back(std::move(x));
-                    m_variant.template emplace<1>(std::move(v));
-                } else {
-                    new (arg.m_data + arg.m_size) T(std::move(x));
-                    ++arg.m_size;
-                }
-            } else {
-                arg.push_back(std::move(x));
-            }
-        }, m_variant);
+    iterator begin() noexcept {
+        return m_store.begin();
     }
 
-    void pop_back() noexcept {
-        std::visit([this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                --arg.m_size;
-                arg.m_data[arg.m_size].~T();
-            } else {
-                arg.pop_back();
-            }
-        }, m_variant);
+    const_iterator begin() const noexcept {
+        return m_store.begin();
     }
 
-    T *begin() noexcept {
-        return std::visit([](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                return arg.m_data;
-            } else {
-                return &*arg.begin();
-            }
-        }, m_variant);
+    const_iterator cbegin() const noexcept {
+        return m_store.cbegin();
     }
 
-    T *end() noexcept {
-        return std::visit([](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                return arg.m_data + arg.m_size;
-            } else {
-                return &*arg.end();
-            }
-        }, m_variant);
+    iterator end() noexcept {
+        return m_store.end();
     }
 
-    T const *begin() const noexcept {
-        return std::visit([](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                return arg.m_data;
-            } else {
-                return &*arg.begin();
-            }
-        }, m_variant);
+    const_iterator end() const noexcept {
+        return m_store.end();
     }
 
-    T const *end() const noexcept {
-        return std::visit([](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                return arg.m_data + arg.m_size;
-            } else {
-                return &*arg.end();
-            }
-        }, m_variant);
+    const_iterator cend() const noexcept {
+        return m_store.cend();
     }
 
-    T const *cbegin() const noexcept { return begin(); }
-    T const *cend() const noexcept { return end(); }
-
-    T &front() noexcept { return *begin(); }
-    T const &front() const noexcept { return *cbegin(); }
-
-    T &back() noexcept { return *(end() - 1); }
-    T const &back() const noexcept { return *(cend() - 1); }
-
-    T *data() noexcept { return begin(); }
-    T const *data() const noexcept { return cbegin(); }
-    T const *cdata() const noexcept { return cbegin(); }
-
-    T &operator[](std::size_t index) noexcept { return data()[index]; }
-    T const &operator[](std::size_t index) const noexcept { return cdata()[index]; }
-
-    T &at(std::size_t index) {
-        if (index >= size()) [[unlikely]] throw std::out_of_range("InlineVector::at");
-        return data()[index];
+    bool empty() const noexcept {
+        return m_store.empty();
     }
 
-    T const &at(std::size_t index) const {
-        if (index >= size()) [[unlikely]] throw std::out_of_range("InlineVector::at");
-        return cdata()[index];
+    size_type size() const noexcept {
+        return m_store.size();
+    }
+
+    size_type max_size() const noexcept {
+        return m_store.max_size();
     }
 
     void clear() noexcept {
-        std::visit([this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                for (std::size_t i = 0; i < arg.m_size; ++i) {
-                    arg.m_data[i].~T();
-                }
-                arg.m_size = 0;
-            } else {
-                arg.clear();
-            }
-        }, m_variant);
+        m_store.clear();
     }
 
-    ~InlineVector() noexcept {
-        clear();
+    iterator erase(const_iterator pos) {
+        return m_store.erase(pos);
     }
 
-    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
-    [[nodiscard]] std::size_t size() const noexcept {
-        return std::visit([](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                return arg.m_size;
-            } else {
-                return arg.size();
-            }
-        }, m_variant);
+    iterator erase(const_iterator first, const_iterator last) {
+        return m_store.erase(first, last);
     }
 
-    void resize(std::size_t new_size) {
-        std::visit([new_size, this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                for (std::size_t i = new_size; i < arg.m_size; ++i) {
-                    arg.m_data[i].~T();
-                }
-                for (std::size_t i = arg.m_size; i < new_size; ++i) {
-                    new (arg.m_data + i) T();
-                }
-                arg.m_size = new_size;
-            } else {
-                arg.resize(new_size);
-            }
-        }, m_variant);
+    size_type erase(const key_type &key) {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), key, value_key_comp());
+        if (it != m_store.end() && it->first == key) {
+            m_store.erase(it);
+            return 1;
+        } else {
+            return 0;
+        }
     }
 
-    void resize(std::size_t new_size, T const &value) {
-        std::visit([new_size, &value](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                for (std::size_t i = 0; i < new_size && i < arg.m_size; ++i) {
-                    arg.m_data[i].~T();
-                }
-                for (std::size_t i = arg.m_size; i < new_size; ++i) {
-                    new (arg.m_data + i) T(value);
-                }
-                arg.m_size = new_size;
-            } else {
-                arg.resize(new_size, value);
-            }
-        }, m_variant);
+    reference operator[](const key_type &key) {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), key, value_key_comp());
+        if (it != m_store.end() && it->first == key) {
+            return it->second;
+        } else {
+            it = m_store.emplace(it, key, V());
+            return it->second;
+        }
     }
 
-    void reserve(std::size_t new_size) {
-        std::visit([new_size, this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                if (new_size > N) {
-                    auto &v = m_variant.template emplace<1>();
-                    v.reserve(new_size);
-                }
-            } else {
-                arg.reserve(new_size);
-            }
-        }, m_variant);
+    std::pair<iterator, bool> insert_or_assign(const key_type &key, const mapped_type &value) {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), key, value_key_comp());
+        if (it != m_store.end() && it->first == key) {
+            it->second = value;
+            return {it, false};
+        } else {
+            return {m_store.emplace(it, key, value), true};
+        }
     }
 
-    template <std::input_iterator It, std::sentinel_for<It> Ite>
-    void insert(const_iterator pos, It first, Ite last) {
-        std::visit([&pos, this, &first, &last](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                auto n = pos - cbegin();
-                for (; first != last; ++first) {
-                    push_back(*first);
-                }
-                for (std::size_t i = n; i < size(); ++i) {
-                    std::swap(begin()[i], back());
-                }
-            } else {
-                arg.insert(arg.begin() + (pos - cbegin()), first, last);
-            }
-        }, m_variant);
+    std::pair<iterator, bool> insert_or_assign(key_type &&key, mapped_type &&value) {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), key, value_key_comp());
+        if (it != m_store.end() && it->first == key) {
+            it->second = std::move(value);
+            return {it, false};
+        } else {
+            return {m_store.emplace(it, std::move(key), std::move(value)), true};
+        }
+    }
+
+    bool contains(const key_type &key) const {
+        auto it = std::lower_bound(m_store.begin(), m_store.end(), key, value_key_comp());
+        return (it != m_store.end() && it->first == key);
+    }
+
+    friend bool operator==(const SmallMap &lhs, const SmallMap &rhs) {
+        return lhs.m_store == rhs.m_store;
+    }
+
+    friend bool operator!=(const SmallMap &lhs, const SmallMap &rhs) {
+        return !(lhs == rhs);
+    }
+
+    auto key_comp() const {
+        return Cmp{};
     }
 };
 #else

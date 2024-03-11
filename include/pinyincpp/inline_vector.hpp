@@ -24,6 +24,7 @@ struct InlineVector {
     using iterator = pointer;
     using const_iterator = const_pointer;
 
+private:
     struct Store {
         union {
             T m_data[N];
@@ -35,6 +36,7 @@ struct InlineVector {
 
     std::variant<Store, std::vector<T>> m_variant;
 
+public:
     InlineVector() noexcept {
         auto &store = m_variant.template emplace<0>();
         store.m_size = 0;

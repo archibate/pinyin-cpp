@@ -20,7 +20,7 @@ public:
     void insert(Kss const &keys, V value) {
         Node *current = &root;
         for (K const &key : keys) {
-            auto result = current->children.emplace(std::piecewise_construct, std::make_tuple(key), std::make_tuple());
+            auto result = current->children.try_emplace(key);
             current = &result.first->second;
         }
         current->values.push_back(std::move(value));
@@ -30,7 +30,7 @@ public:
     void batchedInsert(Kss const &keys, Vit first, Vit last) {
         Node *current = &root;
         for (K const &key : keys) {
-            auto result = current->children.emplace(std::piecewise_construct, std::make_tuple(key), std::make_tuple());
+            auto result = current->children.try_emplace(key);
             current = &result.first->second;
         }
         current->values.insert(current->values.end(), first, last);

@@ -21,7 +21,7 @@ struct PinyinWordsDB {
     };
 
     std::vector<WordData> wordData;
-    TrieMultimap<Pid, std::size_t, InlineVector<Pid, 6>, InlineVector<std::size_t, 4>> triePinyinToWord;
+    TrieMultimap<Pid, std::size_t, InlineVector<Pid, 6>, InlineVector<std::size_t, 3>> triePinyinToWord;
 
     explicit PinyinWordsDB() {
         BytesReader f = CMakeResource("data/pinyin-words.bin").view();
@@ -43,7 +43,7 @@ struct PinyinWordsDB {
             std::size_t wordBaseId = wordData.size();
             auto lenWords = f.read8();
             while (lenWords) {
-                double logProb = (double)f.read16() / 4096;
+                double logProb = (double)f.read16() / 2048;
                 auto word = f.reads<std::u16string>(lenWords);
                 wordData.push_back({std::move(word), static_cast<float>(logProb), std::move(pidTones)});
                 lenWords = f.read8();
