@@ -16,12 +16,66 @@ namespace pinyincpp {
 struct PinyinWordsDB {
     struct WordData {
         std::u16string word;
-        float score;
         InlineVector<PidTone, 6> pinyin;
+        float score;
     };
 
+#if 0
+    template <class, class NodePtr>
+    struct TrieKVPair {
+#ifdef __x86_64__
+    private:
+        struct Second {
+            constexpr auto &operator*() const noexcept {
+                auto *that = reinterpret_cast<TrieKVPair const *>(this);
+                return *that->get_second();
+            }
+        };
+    public:
+        [[no_unique_address]] Second second;
+
+    private:
+        std::intptr_t real_second: 48;
+    public:
+        Pid first: 16;
+
+    public:
+        constexpr auto *get_second() const noexcept {
+            return reinterpret_cast<typename NodePtr::element_type *>(real_second);
+        }
+    public:
+        constexpr TrieKVPair(Pid first, NodePtr second) noexcept
+        : first(first), real_second(reinterpret_cast<std::intptr_t>(second.release())) {
+        }
+        constexpr TrieKVPair(TrieKVPair &&that) noexcept
+        : first(that.first), real_second(that.real_second) {
+            that.real_second = 0;
+        }
+        constexpr TrieKVPair &operator=(TrieKVPair &&that) noexcept {
+            first = that.first;
+            delete get_second();
+            real_second = that.real_second;
+            that.real_second = 0;
+            return *this;
+        }
+        constexpr ~TrieKVPair() {
+            delete get_second();
+        }
+#else
+        Pid first;
+        NodePtr second;
+#endif
+    };
+#ifdef __x86_64__
+    static_assert(sizeof(TrieKVPair<Pid, std::unique_ptr<char>>) == 8);
+#endif
+
+    std::vector<WordData> wordData;
+    TrieMultimap<Pid, std::size_t, InlineVector<Pid, 6>, InlineVector<std::size_t, 3>, TrieKVPair> triePinyinToWord;
+#else
     std::vector<WordData> wordData;
     TrieMultimap<Pid, std::size_t, InlineVector<Pid, 6>, InlineVector<std::size_t, 3>> triePinyinToWord;
+#endif
 
     explicit PinyinWordsDB() {
         BytesReader f = CMakeResource("data/pinyin-words.bin").view();
@@ -29,7 +83,7 @@ struct PinyinWordsDB {
         wordData.reserve(nWords);
         for (std::size_t i = 0; i < nWords; ++i) {
             auto nPidTones = f.read8();
-            InlineVector<PidTone, 6> pidTones;
+            decltype(WordData{}.pinyin) pidTones;
             InlineVector<Pid, 6> pidUntoned;
             pidTones.reserve(nPidTones);
             pidUntoned.reserve(nPidTones);
@@ -45,7 +99,7 @@ struct PinyinWordsDB {
             while (lenWords) {
                 double logProb = (double)f.read16() / 2048;
                 auto word = f.reads<std::u16string>(lenWords);
-                wordData.push_back({std::move(word), static_cast<float>(logProb), std::move(pidTones)});
+                wordData.push_back({std::move(word), std::move(pidTones), static_cast<float>(logProb)});
                 lenWords = f.read8();
             }
             triePinyinToWord.batchedInsert(pidUntoned, CountingIterator{wordBaseId}, CountingIterator{wordData.size()});
@@ -64,14 +118,13 @@ struct PinyinWordsDB {
             }
             score /= std::max(1.0, (double)num);
             auto pinyin = db.pinyinSplit(utfCto32(pinyinStr), U' ');
-            InlineVector<Pid, 6> pinyinInl(pinyin.begin(), pinyin.end());
-            InlineVector<PidTone, 6> pidToned;
+            decltype(WordData{}.pinyin) pidToned;
             pidToned.reserve(pinyin.size());
             for (auto pid: pinyin) {
                 pidToned.push_back({pid, 0});
             }
-            triePinyinToWord.insert(pinyinInl, wordData.size());
-            wordData.push_back({utf32to16(wordUtf32), static_cast<float>(score * effectivity), std::move(pidToned)});
+            triePinyinToWord.insert(pinyin, wordData.size());
+            wordData.push_back({utf32to16(wordUtf32), std::move(pidToned), static_cast<float>(score * effectivity)});
         }
     }
 };

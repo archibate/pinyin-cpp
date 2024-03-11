@@ -1,15 +1,17 @@
 #pragma once
 
+#include <memory>
 #include <vector>
 #include <pinyincpp/small_map.hpp>
+#include <pinyincpp/inline_vector.hpp>
 
 namespace pinyincpp {
 
-template <class K, class V, class Ks = std::vector<K>, class Vs = std::vector<V>>
+template <class K, class V, class Ks = std::vector<K>, class Vs = std::vector<V>, template <class, class> class KVPair = std::pair>
 struct TrieMultimap {
 private:
     struct Node {
-        SmallMap<K, Node> children;
+        SmallMap<K, std::unique_ptr<Node>, std::less<K>, InlineVector<KVPair<K, std::unique_ptr<Node>>, 2>> children;
         Vs values;
     };
 
@@ -20,8 +22,8 @@ public:
     void insert(Kss const &keys, V value) {
         Node *current = &root;
         for (K const &key : keys) {
-            auto result = current->children.try_emplace(key);
-            current = &result.first->second;
+            auto result = current->children.emplace(key, std::make_unique<Node>());
+            current = &*result.first->second;
         }
         current->values.push_back(std::move(value));
     }
@@ -30,8 +32,8 @@ public:
     void batchedInsert(Kss const &keys, Vit first, Vit last) {
         Node *current = &root;
         for (K const &key : keys) {
-            auto result = current->children.try_emplace(key);
-            current = &result.first->second;
+            auto result = current->children.emplace(key, std::make_unique<Node>());
+            current = &*result.first->second;
         }
         current->values.insert(current->values.end(), first, last);
     }
@@ -48,7 +50,7 @@ public:
                 return false;
             }
             parent = current;
-            current = &it->second;
+            current = &*it->second;
         }
         if (!parent) {
             return false;
@@ -65,7 +67,7 @@ public:
             if (it == current->children.end()) {
                 return {};
             }
-            current = &it->second;
+            current = &*it->second;
         }
         if (!current->values) {
             return {};
@@ -81,7 +83,7 @@ public:
             if (it == current->children.end()) {
                 return false;
             }
-            current = &it->second;
+            current = &*it->second;
         }
         return visitItems(*current, keys, visit, depthLimit);
     }
@@ -117,7 +119,7 @@ private:
         for (auto const &child : node.children) {
             Kss newKeys = keys;
             newKeys.push_back(child.first);
-            if (visitItems(child.second, newKeys, visit, depthLimit - 1)) {
+            if (visitItems(*child.second, newKeys, visit, depthLimit - 1)) {
                 return true;
             }
         }

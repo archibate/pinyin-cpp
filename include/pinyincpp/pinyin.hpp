@@ -37,7 +37,7 @@ struct PidTone {
     auto tuplify() const { return std::tie(pid, tone); }
 };
 
-using PidSet = InlineVector<Pid, 4>;
+using PidSet = InlineVector<Pid, 2>;
 using PidToneSet = InlineVector<PidTone, 4>;
 
 struct PinyinDB {

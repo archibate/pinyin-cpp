@@ -7,7 +7,7 @@
 #include <cstring>
 #include <variant>
 #include <vector>
-#include <unordered_map>
+#include <map>
 
 namespace pinyincpp {
 
@@ -18,7 +18,7 @@ struct SmallMap {
     using mapped_type = V;
     using key_compare = Cmp;
     using base_vector_type = BaseVector;
-    using value_type = std::pair<K, V>;
+    using value_type = typename base_vector_type::value_type;
     using size_type = std::size_t;
     using difference_type = std::ptrdiff_t;
     using reference = value_type&;
@@ -50,6 +50,11 @@ public:
         }
     }
 
+    template <class ...Args>
+    std::pair<iterator, bool> emplace(Args &&...args) {
+        return insert(value_type(std::forward<Args>(args)...));
+    }
+
     std::pair<iterator, bool> insert(const value_type &value) {
         auto it = std::lower_bound(m_store.begin(), m_store.end(), value.first, value_key_comp());
         if (it != m_store.end() && it->first == value.first) {
@@ -70,9 +75,8 @@ public:
 
     template <class InputIt>
     void insert(InputIt first, InputIt last) {
-        for (auto it = first; it != last; ++it) {
-            insert(*it);
-        }
+        m_store.insert(m_store.end(), first, last);
+        std::sort(m_store.begin(), m_store.end(), value_comp());
     }
 
     void insert(std::initializer_list<value_type> ilist) {
@@ -201,10 +205,16 @@ public:
     auto key_comp() const {
         return Cmp{};
     }
+
+    auto value_comp() const {
+        return [] (const value_type &lhs, const value_type &rhs) {
+            return Cmp{}(lhs.first, rhs.first);
+        };
+    }
 };
 #else
-template <class K, class V>
-using SmallMap = std::unordered_map<K, V>;
+template <class K, class V, class Cmp = std::less<K>, class = void>
+using SmallMap = std::map<K, V, Cmp>;
 #endif
 
 }

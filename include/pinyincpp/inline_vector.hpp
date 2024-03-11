@@ -1,8 +1,8 @@
 #pragma once
 
+#include "pinyincpp/debug.hpp"
 #include <cstddef>
 #include <initializer_list>
-#include <concepts>
 #include <iterator>
 #include <algorithm>
 #include <cstring>
@@ -32,6 +32,7 @@ private:
         std::size_t m_size = 0;
 
         Store() noexcept {}
+        ~Store() noexcept {}
     };
 
     std::variant<Store, std::vector<T>> m_variant;
@@ -112,30 +113,16 @@ public:
     }
 
     void push_back(const T& x) {
-        std::visit([&x, this](auto&& arg){
-            using S = std::decay_t<decltype(arg)>;
-            if constexpr (std::is_same_v<S, Store>) {
-                if (arg.m_size + 1 >= N) {
-                    std::vector<T> v;
-                    v.reserve(arg.m_size + 1);
-                    v.assign(arg.m_data, arg.m_data + arg.m_size);
-                    for (std::size_t i = 0; i < N; ++i) {
-                        arg.m_data[i].~T();
-                    }
-                    v.push_back(x);
-                    m_variant.template emplace<1>(std::move(v));
-                } else {
-                    new (arg.m_data + arg.m_size) T(x);
-                    ++arg.m_size;
-                }
-            } else {
-                arg.push_back(x);
-            }
-        }, m_variant);
+        emplace_back(x);
     }
 
     void push_back(T&& x) {
-        std::visit([&x, this](auto&& arg){
+        emplace_back(std::move(x));
+    }
+
+    template <class ...Args>
+    void emplace_back(Args&&... args) {
+        std::visit([&args..., this](auto&& arg){
             using S = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<S, Store>) {
                 if (arg.m_size + 1 >= N) {
@@ -145,14 +132,14 @@ public:
                     for (std::size_t i = 0; i < N; ++i) {
                         arg.m_data[i].~T();
                     }
-                    v.push_back(std::move(x));
+                    v.emplace_back(std::forward<Args>(args)...);
                     m_variant.template emplace<1>(std::move(v));
                 } else {
-                    new (arg.m_data + arg.m_size) T(std::move(x));
+                    new (arg.m_data + arg.m_size) T(std::forward<Args>(args)...);
                     ++arg.m_size;
                 }
             } else {
-                arg.push_back(std::move(x));
+                arg.push_back(std::forward<Args>(args)...);
             }
         }, m_variant);
     }
@@ -308,8 +295,13 @@ public:
             using S = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<S, Store>) {
                 if (new_size > N) {
-                    auto &v = m_variant.template emplace<1>();
+                    std::vector<T> v;
                     v.reserve(new_size);
+                    v.assign(std::make_move_iterator(arg.m_data), std::make_move_iterator(arg.m_data + arg.m_size));
+                    for (std::size_t i = 0; i < arg.m_size; ++i) {
+                        arg.m_data[i].~T();
+                    }
+                    m_variant.template emplace<1>(std::move(v));
                 }
             } else {
                 arg.reserve(new_size);
@@ -317,24 +309,67 @@ public:
         }, m_variant);
     }
 
-    template <std::input_iterator It, std::sentinel_for<It> Ite>
-    void insert(const_iterator pos, It first, Ite last) {
+    template <class InputIt>
+    void insert(const_iterator pos, InputIt first, InputIt last) {
+        for (; first != last; ++first) {
+            pos = insert(pos, *first);
+            ++pos;
+        }
+        return;
         std::visit([&pos, this, &first, &last](auto&& arg){
             using S = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<S, Store>) {
-                auto n = pos - cbegin();
                 for (; first != last; ++first) {
-                    push_back(*first);
-                }
-                for (std::size_t i = n; i < size(); ++i) {
-                    std::swap(begin()[i], back());
+                    pos = insert(pos, *first);
+                    ++pos;
+                    if (m_variant.index() == 1) {
+                        auto &v = std::get<1>(m_variant);
+                        v.insert(v.begin() + (pos - cbegin()), ++first, last);
+                        return;
+                    }
                 }
             } else {
                 arg.insert(arg.begin() + (pos - cbegin()), first, last);
             }
         }, m_variant);
     }
+
+    template <class ...Args>
+    iterator emplace(const_iterator pos, Args &&...args) {
+        return std::visit([&pos, this, &args...](auto&& arg){
+            using S = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<S, Store>) {
+                auto j = pos - arg.m_data;
+                if (arg.m_size + 1 <= N) {
+                    for (size_t i = arg.m_size; i != j; i--) {
+                        new (arg.m_data + i) T(std::move(arg.m_data[i - 1]));
+                        arg.m_data[i - 1].~T();
+                    }
+                    new (arg.m_data + j) T(std::forward<Args>(args)...);
+                    ++arg.m_size;
+                    return arg.m_data + j;
+                } else {
+                    reserve(arg.m_size + 1);
+                    auto &v = std::get<1>(m_variant);
+                    return std::addressof(*v.insert(v.begin() + j, std::forward<Args>(args)...));
+                }
+            } else {
+                return std::addressof(*arg.insert(arg.begin() + (pos - cbegin()), std::forward<Args>(args)...));
+            }
+        }, m_variant);
+    }
+
+    iterator insert(const_iterator pos, T &&value) {
+        return emplace(pos, std::move(value));
+    }
+
+    iterator insert(const_iterator pos, T const &value) {
+        return emplace(pos, value);
+    }
 };
+
+template <class T>
+struct InlineVector<T, 0> : std::vector<T> {};
 
 #else
 template <class T, std::size_t N>

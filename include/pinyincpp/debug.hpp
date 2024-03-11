@@ -11,6 +11,7 @@
 
 namespace pinyincpp {
 
+#if !defined(NDEBUG)
 struct debug {
 private:
     std::ostringstream oss;
@@ -264,5 +265,56 @@ public:
         }
     }
 };
+#else
+struct debug {
+    debug(bool = true, const char * = nullptr) noexcept {}
+    debug(debug &&) = delete;
+    debug(debug const &) = delete;
+
+    template <class T>
+    debug &operator,(T &&) {
+        return *this;
+    }
+
+    template <class T>
+    debug &operator<<(T &&) {
+        return *this;
+    }
+
+    debug &on(bool) {
+        return *this;
+    }
+
+    debug &fail(bool = true) {
+        return *this;
+    }
+
+    ~debug() noexcept(false) {}
+
+private:
+    struct debug_condition {
+        debug &d;
+        explicit debug_condition(debug &d) : d(d) {}
+
+        template <class U> debug &operator<(U const &) { return d; }
+        template <class U> debug &operator>(U const &) { return d; }
+        template <class U> debug &operator<=(U const &) { return d; }
+        template <class U> debug &operator>=(U const &) { return d; }
+        template <class U> debug &operator==(U const &) { return d; }
+        template <class U> debug &operator!=(U const &) { return d; }
+    };
+
+public:
+    template <class T>
+    debug_condition check(T const &) noexcept {
+        return debug_condition{*this};
+    }
+
+    template <class T>
+    debug_condition operator>>(T const &) noexcept {
+        return debug_condition{*this};
+    }
+};
+#endif
 
 }

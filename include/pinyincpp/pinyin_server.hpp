@@ -52,6 +52,71 @@ struct PinyinServer {
         std::size_t fixedEatBytes;
     };
 
+    static bool isSeemsPinyin(PinyinDB &db, std::u32string const &prefixUtf32, std::vector<Pid> const &pids) {
+        int englishTendency = 0;
+        auto [numCnPrefix, numEnPrefix] = chineseEnglishFraction(prefixUtf32);
+        if (numCnPrefix * 2 > numEnPrefix * 3) {
+            englishTendency -= 1;
+        } else if (numEnPrefix * 2 > numCnPrefix * 3) {
+            englishTendency += 1;
+        }
+        if (numCnPrefix > numEnPrefix * 3) {
+            englishTendency -= 2;
+        } else if (numEnPrefix > numCnPrefix * 4) {
+            englishTendency += 1;
+        }
+        if (numEnPrefix > numCnPrefix * 8) {
+            englishTendency += 1;
+        }
+        int pinyinCount = 0, specialCount = 0;
+        for (auto const &pid: pids) {
+            if (isSpecialPid(pid)) {
+                char32_t c = extractSpecialPid(pid);
+                if (c != U' ' && c != U'_') {
+                    if (isEnglishCharacter(c)) {
+                        specialCount += 34;
+                    } else if (isEnglishPuncation(c)) {
+                        specialCount += 4;
+                    } else {
+                        specialCount += 1;
+                    }
+                }
+            } else {
+                auto pinName = db.pinyinName(pid);
+                auto pinLen = pinName.size();
+                if (pinLen >= 2) {
+                    if (std::string("wxyzgqjy").find(pinName.front()) != std::string::npos) {
+                        pinLen += 1;
+                    }
+                    if (pinLen == 2 && std::string("iuv").find(pinName.back()) != std::string::npos) {
+                        pinyinCount += 10;
+                    }
+                    if (pinLen == 2 && std::string("ao").find(pinName.back()) != std::string::npos) {
+                        pinyinCount += 8;
+                    }
+                    if (pinLen >= 3 && std::string("zcs").find(pinName.front()) != std::string::npos && pinName[1] == 'h') {
+                        pinLen += 1;
+                        pinyinCount += 6;
+                    }
+                }
+                pinyinCount += pinLen * 10;
+                if (pinLen >= 5) {
+                    pinyinCount += 12;
+                } else if (pinLen >= 4) {
+                    pinyinCount += 7;
+                }
+                if (pinLen <= 1) {
+                    specialCount += 8;
+                } else if (pinLen <= 2) {
+                    specialCount += 5;
+                } else if (pinLen <= 3) {
+                    specialCount += 2;
+                }
+            }
+        }
+        return pinyinCount != 0 && specialCount * (5 + englishTendency) < pinyinCount + 13;
+    }
+
     InputResult onInput(std::string const &prefix, std::string const &in, std::size_t num = 100) {
         InputResult result{};
         std::size_t inpos, pos;
@@ -76,74 +141,7 @@ struct PinyinServer {
             auto restUtf32 = utfCto32(rest);
             auto pids = db.pinyinSplit(restUtf32, false, U'0', &indices);
             if (!pids.empty()) {
-                int englishTendency = 0;
-                auto [numCnPrefix, numEnPrefix] = chineseEnglishFraction(prefixUtf32);
-                if (numCnPrefix * 2 > numEnPrefix * 3) {
-                    englishTendency -= 1;
-                } else if (numEnPrefix * 2 > numCnPrefix * 3) {
-                    englishTendency += 1;
-                }
-                if (numCnPrefix > numEnPrefix * 3) {
-                    englishTendency -= 2;
-                } else if (numEnPrefix > numCnPrefix * 4) {
-                    englishTendency += 1;
-                }
-                if (numEnPrefix > numCnPrefix * 8) {
-                    englishTendency += 1;
-                }
-                int pinyinCount = 0, specialCount = 0;
-                bool seemsPinyin = true;
-                /* auto foundSep = restUtf32.find(U'0'); */
-                /* if (foundSep == 0 || (!restUtf32.empty() && foundSep == restUtf32.size() - 1)) { */
-                    for (auto const &pid: pids) {
-                        if (isSpecialPid(pid)) {
-                            char32_t c = extractSpecialPid(pid);
-                            if (c != U' ' && c != U'_') {
-                                if (isEnglishCharacter(c)) {
-                                    specialCount += 34;
-                                } else if (isEnglishPuncation(c)) {
-                                    specialCount += 4;
-                                } else {
-                                    specialCount += 1;
-                                }
-                            }
-                        } else {
-                            auto pinName = db.pinyinName(pid);
-                            auto pinLen = pinName.size();
-                            if (pinLen >= 2) {
-                                if (std::string("wxyzgqjy").find(pinName.front()) != std::string::npos) {
-                                    pinLen += 1;
-                                }
-                                if (pinLen == 2 && std::string("iuv").find(pinName.back()) != std::string::npos) {
-                                    pinyinCount += 10;
-                                }
-                                if (pinLen == 2 && std::string("ao").find(pinName.back()) != std::string::npos) {
-                                    pinyinCount += 8;
-                                }
-                                if (pinLen >= 3 && std::string("zcs").find(pinName.front()) != std::string::npos && pinName[1] == 'h') {
-                                    pinLen += 1;
-                                    pinyinCount += 6;
-                                }
-                            }
-                            pinyinCount += pinLen * 10;
-                            if (pinLen >= 5) {
-                                pinyinCount += 12;
-                            } else if (pinLen >= 4) {
-                                pinyinCount += 7;
-                            }
-                            if (pinLen <= 1) {
-                                specialCount += 8;
-                            } else if (pinLen <= 2) {
-                                specialCount += 5;
-                            } else if (pinLen <= 3) {
-                                specialCount += 2;
-                            }
-                        }
-                    }
-                    /* printf("%d, %d\n", specialCount, pinyinCount); */
-                    seemsPinyin = pinyinCount != 0 && specialCount * (5 + englishTendency) < pinyinCount + 13;
-                /* } */
-                if (seemsPinyin) {
+                if (isSeemsPinyin(db, prefixUtf32, pids)) {
                     result.fixedPrefix = past;
                     result.fixedEatBytes = inpos;
                     std::vector<std::size_t> byteIndices;
