@@ -10,7 +10,7 @@
 #include <vector>
 #include <pinyincpp/utf8.hpp>
 #include <pinyincpp/sort_top_n.hpp>
-#include <pinyincpp/pinyin.hpp>
+#include <pinyincpp/pinyin_chars.hpp>
 
 namespace pinyincpp {
 

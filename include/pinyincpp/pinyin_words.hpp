@@ -6,8 +6,8 @@
 #include <vector>
 #include <pinyincpp/resources.hpp>
 #include <pinyincpp/utf8.hpp>
-#include <pinyincpp/pinyin.hpp>
 #include <pinyincpp/trie.hpp>
+#include <pinyincpp/pinyin_chars.hpp>
 #include <pinyincpp/counting_iterator.hpp>
 #include <pinyincpp/inline_vector.hpp>
 

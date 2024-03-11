@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include <pinyincpp/pinyin.hpp>
+#include <pinyincpp/pinyin_chars.hpp>
 #include <pinyincpp/pinyin_words.hpp>
 #include <pinyincpp/pinyin_input.hpp>
 #include <pinyincpp/pinyin_englify.hpp>
@@ -44,12 +44,16 @@ struct PinyinServer {
         std::string enggy;
         double score;
         std::size_t eatBytes;
+        auto tuplify() const { return std::tie(text, enggy, score, eatBytes); }
+        static constexpr const char *tupnames[] = {"text", "enggy", "score", "eatBytes"};
     };
 
     struct InputResult {
         std::vector<Candidate> candidates;
         std::string fixedPrefix;
         std::size_t fixedEatBytes;
+        auto tuplify() const { return std::tie(candidates, fixedPrefix, fixedEatBytes); }
+        static constexpr const char *tupnames[] = {"candidates", "fixedPrefix", "fixedEatBytes"};
     };
 
     static bool isSeemsPinyin(PinyinDB &db, std::u32string const &prefixUtf32, std::vector<Pid> const &pids) {

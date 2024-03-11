@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 #include <pinyincpp/utf8.hpp>
-#include <pinyincpp/pinyin.hpp>
+#include <pinyincpp/pinyin_chars.hpp>
 
 namespace pinyincpp {
 

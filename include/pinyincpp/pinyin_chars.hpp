@@ -34,6 +34,7 @@ inline Pid makeSpecialPid(char32_t c) {
 struct PidTone {
     Pid pid: 13;
     std::uint8_t tone: 3;
+    PidTone(Pid pid, std::uint8_t tone) noexcept : pid(pid), tone(tone) {}
     auto tuplify() const { return std::tie(pid, tone); }
 };
 
@@ -49,7 +50,7 @@ struct PinyinDB {
 
     struct PinyinInfo {
         float logFrequency;
-        PidSet pinyin;
+        PidToneSet pinyin;
         auto tuplify() const { return std::tie(logFrequency, pinyin); }
     };
 
@@ -105,15 +106,10 @@ public:
                     lookupPinyinToChar[p.pid].push_back(static_cast<CharInfo const &>(c));
                 }
             }
-        }
-        for (const auto &c : charData) {
             auto &pinInfo = lookupCharToPinyin[c.character];
             pinInfo.logFrequency = c.logFrequency;
-            std::unordered_set<Pid> addedPinyin;
             for (auto const &p: c.pinyin) {
-                if (addedPinyin.insert(p.pid).second) {
-                    pinInfo.pinyin.push_back(p.pid);
-                }
+                pinInfo.pinyin.push_back(p);
             }
         }
         for (const auto &[p, pid] : lookupPinyinToPid) {
@@ -155,12 +151,28 @@ public:
         }
     }
 
+    PidToneSet *charToPinyinToned(char32_t character) {
+        auto it = lookupCharToPinyin.find(character);
+        if (it == lookupCharToPinyin.end()) {
+            return nullptr;
+        } else {
+            return &it->second.pinyin;
+        }
+    }
+
     PidSet charToPinyin(char32_t character) {
         auto it = lookupCharToPinyin.find(character);
         if (it == lookupCharToPinyin.end()) {
             return {};
         } else {
-            return it->second.pinyin;
+            PidSet pidSet;
+            std::unordered_set<Pid> addedPinyin;
+            for (auto p: it->second.pinyin) {
+                if (addedPinyin.insert(p.pid).second) {
+                    pidSet.push_back(p.pid);
+                }
+            }
+            return pidSet;
         }
     }
 
@@ -171,6 +183,21 @@ public:
         } else {
             return it->second.logFrequency;
         }
+    }
+    std::vector<PidToneSet> stringToPinyinToned(std::u32string const &str, bool ignoreCase = false) {
+        std::vector<PidToneSet> result;
+        result.reserve(str.size());
+        for (char32_t c : str) {
+            if (ignoreCase) {
+                if ('A' <= c && c <= 'Z') {
+                    c += 'a' - 'A';
+                }
+            }
+            auto p = charToPinyinToned(c);
+            auto &e = p ? result.emplace_back(*p) : result.emplace_back();
+            e.push_back({makeSpecialPid(c), 0});
+        }
+        return result;
     }
 
     std::vector<PidSet> stringToPinyin(std::u32string const &str, bool ignoreCase = false) {
@@ -193,13 +220,13 @@ public:
         result.reserve(str32.size());
         for (char32_t c : str32) {
             auto &back = result.emplace_back();
-            auto pidSet = charToPinyin(c);
-            if (pidSet.empty()) {
+            auto pidToneSet = charToPinyinToned(c);
+            if (!pidToneSet || pidToneSet->empty()) {
                 back.push_back(utf32toC(c));
             } else {
-                back.reserve(pidSet.size());
-                for (auto p: pidSet) {
-                    back.push_back(pinyinName(p));
+                back.reserve(pidToneSet->size());
+                for (auto p: *pidToneSet) {
+                    back.push_back(pinyinName(p.pid));
                 }
             }
         }
